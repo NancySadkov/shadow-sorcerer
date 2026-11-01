@@ -1,6 +1,6 @@
 # Shadow Sorcerer — source reconstruction
 
-Source-level reconstruction of **Shadow Sorcerer**, the 1991 SSI / U.S. Gold
+Reverse engineered **Shadow Sorcerer**, the 1991 SSI / U.S. Gold
 Dragonlance RPG, rebuilt from the shipped MS-DOS release.
 
 Author: **[Nancy Sadkov](https://aermia.com/)**
