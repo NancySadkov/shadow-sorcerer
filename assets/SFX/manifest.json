@@ -1,0 +1,137 @@
+{
+ "format": "sfx-embedded",
+ "source": "GAME.EXE",
+ "bank_image": 51344,
+ "bank_bytes": 1494,
+ "table_image": 51280,
+ "entries": [
+  {
+   "index": 0,
+   "offset": 8,
+   "kind": 0,
+   "binary": "SFX0000.BIN",
+   "wav": "SFX0000.WAV",
+   "label": ""
+  },
+  {
+   "index": 1,
+   "offset": 0,
+   "kind": 0,
+   "binary": "SFX0001.BIN",
+   "wav": "SFX0001.WAV",
+   "label": ""
+  },
+  {
+   "index": 2,
+   "offset": 16,
+   "kind": 0,
+   "binary": "SFX0002.BIN",
+   "wav": "SFX0002.WAV",
+   "label": ""
+  },
+  {
+   "index": 3,
+   "offset": 30,
+   "kind": 1,
+   "binary": "SFX0003.BIN",
+   "wav": "SFX0003.WAV",
+   "label": "tone"
+  },
+  {
+   "index": 4,
+   "offset": 224,
+   "kind": 1,
+   "binary": "SFX0004.BIN",
+   "wav": "SFX0004.WAV",
+   "label": "tone"
+  },
+  {
+   "index": 5,
+   "offset": 402,
+   "kind": 0,
+   "binary": "SFX0005.BIN",
+   "wav": "SFX0005.WAV",
+   "label": ""
+  },
+  {
+   "index": 6,
+   "offset": 410,
+   "kind": 0,
+   "binary": "SFX0006.BIN",
+   "wav": "SFX0006.WAV",
+   "label": ""
+  },
+  {
+   "index": 7,
+   "offset": 424,
+   "kind": 0,
+   "binary": "SFX0007.BIN",
+   "wav": "SFX0007.WAV",
+   "label": ""
+  },
+  {
+   "index": 8,
+   "offset": 534,
+   "kind": 0,
+   "binary": "SFX0008.BIN",
+   "wav": "SFX0008.WAV",
+   "label": ""
+  },
+  {
+   "index": 9,
+   "offset": 644,
+   "kind": 0,
+   "binary": "SFX0009.BIN",
+   "wav": "SFX0009.WAV",
+   "label": ""
+  },
+  {
+   "index": 10,
+   "offset": 952,
+   "kind": 0,
+   "binary": "SFX0010.BIN",
+   "wav": "SFX0010.WAV",
+   "label": ""
+  },
+  {
+   "index": 11,
+   "offset": 1044,
+   "kind": 0,
+   "binary": "SFX0011.BIN",
+   "wav": "SFX0011.WAV",
+   "label": ""
+  },
+  {
+   "index": 12,
+   "offset": 1064,
+   "kind": 0,
+   "binary": "SFX0012.BIN",
+   "wav": "SFX0012.WAV",
+   "label": ""
+  },
+  {
+   "index": 13,
+   "offset": 1144,
+   "kind": 2,
+   "binary": "SFX0013.BIN",
+   "wav": "SFX0013.WAV",
+   "label": "melody"
+  },
+  {
+   "index": 14,
+   "offset": 1006,
+   "kind": 0,
+   "binary": "SFX0014.BIN",
+   "wav": "SFX0014.WAV",
+   "label": ""
+  },
+  {
+   "index": 15,
+   "offset": 1244,
+   "kind": 3,
+   "binary": "SFX0015.BIN",
+   "wav": "SFX0015.WAV",
+   "label": "melody"
+  }
+ ]
+}

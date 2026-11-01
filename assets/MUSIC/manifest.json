@@ -1,0 +1,84 @@
+{
+ "format": "midi-container",
+ "source": "SSI.DAT",
+ "size": 16572,
+ "sha256": "b62571c53c0e18f368837f8553bb76634bae3a04218a4bdae8bcba4c76927da0",
+ "table": [
+  0,
+  128,
+  3020,
+  4926,
+  6444,
+  7456,
+  13414,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556,
+  14556
+ ],
+ "entries": [
+  {
+   "offset": 128,
+   "file": "SSI0001.MID",
+   "size": 2892,
+   "sha256": "4a556ab3c21e6150bd469bfcef0357ee4b05dae3083c2812b8cc13f77badd92e"
+  },
+  {
+   "offset": 3020,
+   "file": "SSI0002.MID",
+   "size": 1906,
+   "sha256": "b4d55e338729a91fcb1349acd3baf037e6a719b4bdc343383910be7d3c499c64"
+  },
+  {
+   "offset": 4926,
+   "file": "SSI0003.MID",
+   "size": 1518,
+   "sha256": "bdd32beae4109732f4d763f2fa6d55aec66aa99970f61db50903b4799c807f33"
+  },
+  {
+   "offset": 6444,
+   "file": "SSI0004.MID",
+   "size": 1012,
+   "sha256": "fa5d3e548ebf381fb61edddcbe8c325f8da9a85597542af35e7610382523175f"
+  },
+  {
+   "offset": 7456,
+   "file": "SSI0005.MID",
+   "size": 5958,
+   "sha256": "f2fc06bc8f52b3e7360eba873a3a6e1731276b664c2efc8c963332872c1e9d9b"
+  },
+  {
+   "offset": 13414,
+   "file": "SSI0006.MID",
+   "size": 1142,
+   "sha256": "99f7e8e09b7a024528e2b8f66b997978bb3acf766199422806b88f2ed0ee1f2c"
+  },
+  {
+   "offset": 14556,
+   "file": "SSI0007.MID",
+   "size": 2016,
+   "sha256": "350cb806c930b0ff18a927c9325a7302b101f8d10ce26866bc5116fa9416910e"
+  }
+ ]
+}

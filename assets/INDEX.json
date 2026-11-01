@@ -1,0 +1,295 @@
+{
+ "format": "shadow-sorcerer-assets",
+ "groups": [
+  {
+   "directory": "INTRO",
+   "format": "intro-pages",
+   "source": null
+  },
+  {
+   "directory": "MUSIC",
+   "format": "midi-container",
+   "source": "SSI.DAT"
+  },
+  {
+   "directory": "RAW",
+   "format": "raw",
+   "source": null
+  },
+  {
+   "directory": "SFX",
+   "format": "sfx-embedded",
+   "source": "GAME.EXE"
+  },
+  {
+   "directory": "TEXT",
+   "format": "text",
+   "source": "TEXT.DAT"
+  },
+  {
+   "directory": "VCIN0_DAT",
+   "format": "offset-bank",
+   "source": "VCIN0.DAT"
+  },
+  {
+   "directory": "VCIN1_DAT",
+   "format": "offset-bank",
+   "source": "VCIN1.DAT"
+  },
+  {
+   "directory": "VCIN2_DAT",
+   "format": "offset-bank",
+   "source": "VCIN2.DAT"
+  },
+  {
+   "directory": "VCIN3_DAT",
+   "format": "offset-bank",
+   "source": "VCIN3.DAT"
+  },
+  {
+   "directory": "VCIN4_DAT",
+   "format": "offset-bank",
+   "source": "VCIN4.DAT"
+  },
+  {
+   "directory": "VCLIPS_DAT",
+   "format": "offset-bank",
+   "source": "VCLIPS.DAT"
+  },
+  {
+   "directory": "VMAPPIC_DAT",
+   "format": "offset-bank",
+   "source": "VMAPPIC.DAT"
+  },
+  {
+   "directory": "VMISSLE_DAT",
+   "format": "missile-bank",
+   "source": "VMISSLE.DAT"
+  },
+  {
+   "directory": "VMON0_DAT",
+   "format": "anim-bank",
+   "source": "VMON0.DAT"
+  },
+  {
+   "directory": "VMON1_DAT",
+   "format": "anim-bank",
+   "source": "VMON1.DAT"
+  },
+  {
+   "directory": "VMONA_DAT",
+   "format": "anim-bank",
+   "source": "VMONA.DAT"
+  },
+  {
+   "directory": "VMONB_DAT",
+   "format": "anim-bank",
+   "source": "VMONB.DAT"
+  },
+  {
+   "directory": "VMONC_DAT",
+   "format": "anim-bank",
+   "source": "VMONC.DAT"
+  },
+  {
+   "directory": "VMOND_DAT",
+   "format": "anim-bank",
+   "source": "VMOND.DAT"
+  },
+  {
+   "directory": "VMONE_DAT",
+   "format": "anim-bank",
+   "source": "VMONE.DAT"
+  },
+  {
+   "directory": "VMONF_DAT",
+   "format": "anim-bank",
+   "source": "VMONF.DAT"
+  },
+  {
+   "directory": "VMONG_DAT",
+   "format": "anim-bank",
+   "source": "VMONG.DAT"
+  },
+  {
+   "directory": "VMONH_DAT",
+   "format": "anim-bank",
+   "source": "VMONH.DAT"
+  },
+  {
+   "directory": "VMONI_DAT",
+   "format": "anim-bank",
+   "source": "VMONI.DAT"
+  },
+  {
+   "directory": "VMONJ_DAT",
+   "format": "anim-bank",
+   "source": "VMONJ.DAT"
+  },
+  {
+   "directory": "VMONK_DAT",
+   "format": "anim-bank",
+   "source": "VMONK.DAT"
+  },
+  {
+   "directory": "VMONL_DAT",
+   "format": "anim-bank",
+   "source": "VMONL.DAT"
+  },
+  {
+   "directory": "VMONM_DAT",
+   "format": "anim-bank",
+   "source": "VMONM.DAT"
+  },
+  {
+   "directory": "VMONN_DAT",
+   "format": "anim-bank",
+   "source": "VMONN.DAT"
+  },
+  {
+   "directory": "VMONO_DAT",
+   "format": "anim-bank",
+   "source": "VMONO.DAT"
+  },
+  {
+   "directory": "VMONP_DAT",
+   "format": "anim-bank",
+   "source": "VMONP.DAT"
+  },
+  {
+   "directory": "VMONQ_DAT",
+   "format": "anim-bank",
+   "source": "VMONQ.DAT"
+  },
+  {
+   "directory": "VMONR_DAT",
+   "format": "anim-bank",
+   "source": "VMONR.DAT"
+  },
+  {
+   "directory": "VMONS_DAT",
+   "format": "anim-bank",
+   "source": "VMONS.DAT"
+  },
+  {
+   "directory": "VMONT_DAT",
+   "format": "anim-bank",
+   "source": "VMONT.DAT"
+  },
+  {
+   "directory": "VMONU_DAT",
+   "format": "anim-bank",
+   "source": "VMONU.DAT"
+  },
+  {
+   "directory": "VMONV_DAT",
+   "format": "anim-bank",
+   "source": "VMONV.DAT"
+  },
+  {
+   "directory": "VMONW_DAT",
+   "format": "anim-bank",
+   "source": "VMONW.DAT"
+  },
+  {
+   "directory": "VMONX_DAT",
+   "format": "anim-bank",
+   "source": "VMONX.DAT"
+  },
+  {
+   "directory": "VMONY_DAT",
+   "format": "anim-bank",
+   "source": "VMONY.DAT"
+  },
+  {
+   "directory": "VMONZ_DAT",
+   "format": "anim-bank",
+   "source": "VMONZ.DAT"
+  },
+  {
+   "directory": "VMPLA_DAT",
+   "format": "anim-bank",
+   "source": "VMPLA.DAT"
+  },
+  {
+   "directory": "VMPLB_DAT",
+   "format": "anim-bank",
+   "source": "VMPLB.DAT"
+  },
+  {
+   "directory": "VMPLC_DAT",
+   "format": "anim-bank",
+   "source": "VMPLC.DAT"
+  },
+  {
+   "directory": "VMPLD_DAT",
+   "format": "anim-bank",
+   "source": "VMPLD.DAT"
+  },
+  {
+   "directory": "VMPLE_DAT",
+   "format": "anim-bank",
+   "source": "VMPLE.DAT"
+  },
+  {
+   "directory": "VMPLF_DAT",
+   "format": "anim-bank",
+   "source": "VMPLF.DAT"
+  },
+  {
+   "directory": "VMPLG_DAT",
+   "format": "anim-bank",
+   "source": "VMPLG.DAT"
+  },
+  {
+   "directory": "VMPLH_DAT",
+   "format": "anim-bank",
+   "source": "VMPLH.DAT"
+  },
+  {
+   "directory": "VMPLI_DAT",
+   "format": "anim-bank",
+   "source": "VMPLI.DAT"
+  },
+  {
+   "directory": "VMPLJ_DAT",
+   "format": "anim-bank",
+   "source": "VMPLJ.DAT"
+  },
+  {
+   "directory": "VMPLK_DAT",
+   "format": "anim-bank",
+   "source": "VMPLK.DAT"
+  },
+  {
+   "directory": "VMPLL_DAT",
+   "format": "anim-bank",
+   "source": "VMPLL.DAT"
+  },
+  {
+   "directory": "VMPLM_DAT",
+   "format": "anim-bank",
+   "source": "VMPLM.DAT"
+  },
+  {
+   "directory": "VMPLN_DAT",
+   "format": "anim-bank",
+   "source": "VMPLN.DAT"
+  },
+  {
+   "directory": "VMPLO_DAT",
+   "format": "anim-bank",
+   "source": "VMPLO.DAT"
+  },
+  {
+   "directory": "VMPLP_DAT",
+   "format": "anim-bank",
+   "source": "VMPLP.DAT"
+  },
+  {
+   "directory": "VOBJPIC_DAT",
+   "format": "offset-bank",
+   "source": "VOBJPIC.DAT"
+  }
+ ]
+}

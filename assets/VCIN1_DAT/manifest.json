@@ -1,0 +1,166 @@
+{
+ "format": "offset-bank",
+ "source": "VCIN1.DAT",
+ "size": 14888,
+ "sha256": "c80ed33673401fd19a2499b03fe75e788f7b1e1de0db82a95f63b1c5ca902d35",
+ "layout": "block",
+ "table_bytes": 52,
+ "entries": [
+  {
+   "offset": 52,
+   "data_offset": 56,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VC10000.PNG",
+   "label": "FEAST_SCENE"
+  },
+  {
+   "offset": 8056,
+   "data_offset": 8060,
+   "width": 2,
+   "height": 25,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VC10001.PNG",
+   "label": "FEAST_DISH_1"
+  },
+  {
+   "offset": 8460,
+   "data_offset": 8464,
+   "width": 2,
+   "height": 25,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VC10002.PNG",
+   "label": "FEAST_DISH_2"
+  },
+  {
+   "offset": 8864,
+   "data_offset": 8868,
+   "width": 2,
+   "height": 25,
+   "layout": "block",
+   "ids": [
+    3
+   ],
+   "png": "VC10003.PNG",
+   "label": "FEAST_DISH_3"
+  },
+  {
+   "offset": 9268,
+   "data_offset": 9272,
+   "width": 2,
+   "height": 25,
+   "layout": "block",
+   "ids": [
+    4
+   ],
+   "png": "VC10004.PNG",
+   "label": "FEAST_DISH_4"
+  },
+  {
+   "offset": 9672,
+   "data_offset": 9676,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    5
+   ],
+   "png": "VC10005.PNG",
+   "label": "FEAST_TABLE_1"
+  },
+  {
+   "offset": 10324,
+   "data_offset": 10328,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    6
+   ],
+   "png": "VC10006.PNG",
+   "label": "FEAST_TABLE_2"
+  },
+  {
+   "offset": 10976,
+   "data_offset": 10980,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    7
+   ],
+   "png": "VC10007.PNG",
+   "label": "FEAST_TABLE_3"
+  },
+  {
+   "offset": 11628,
+   "data_offset": 11632,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    8
+   ],
+   "png": "VC10008.PNG",
+   "label": "FEAST_TABLE_4"
+  },
+  {
+   "offset": 12280,
+   "data_offset": 12284,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    9
+   ],
+   "png": "VC10009.PNG",
+   "label": "FEAST_TABLE_5"
+  },
+  {
+   "offset": 12932,
+   "data_offset": 12936,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    10
+   ],
+   "png": "VC1000A.PNG",
+   "label": "FEAST_TABLE_6"
+  },
+  {
+   "offset": 13584,
+   "data_offset": 13588,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    11
+   ],
+   "png": "VC1000B.PNG",
+   "label": "FEAST_TABLE_7"
+  },
+  {
+   "offset": 14236,
+   "data_offset": 14240,
+   "width": 3,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    12
+   ],
+   "png": "VC1000C.PNG",
+   "label": "FEAST_TABLE_8"
+  }
+ ]
+}

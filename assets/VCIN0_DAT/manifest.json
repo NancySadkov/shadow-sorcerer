@@ -1,0 +1,154 @@
+{
+ "format": "offset-bank",
+ "source": "VCIN0.DAT",
+ "size": 21408,
+ "sha256": "a2b38f49d69cf96bd2765efe51525b665bf74f65b9d64729a4ce91284fa975b4",
+ "layout": "block",
+ "table_bytes": 48,
+ "entries": [
+  {
+   "offset": 48,
+   "data_offset": 52,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VC00000.PNG",
+   "label": "DWARF_SCENE"
+  },
+  {
+   "offset": 8052,
+   "data_offset": 8056,
+   "width": 4,
+   "height": 29,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VC00001.PNG",
+   "label": "DWARF_WAKE_1"
+  },
+  {
+   "offset": 8984,
+   "data_offset": 8988,
+   "width": 4,
+   "height": 29,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VC00002.PNG",
+   "label": "DWARF_WAKE_2"
+  },
+  {
+   "offset": 9916,
+   "data_offset": 9920,
+   "width": 4,
+   "height": 29,
+   "layout": "block",
+   "ids": [
+    3
+   ],
+   "png": "VC00003.PNG",
+   "label": "DWARF_WAKE_3"
+  },
+  {
+   "offset": 10848,
+   "data_offset": 10852,
+   "width": 4,
+   "height": 29,
+   "layout": "block",
+   "ids": [
+    4
+   ],
+   "png": "VC00004.PNG",
+   "label": "DWARF_WAKE_4"
+  },
+  {
+   "offset": 11780,
+   "data_offset": 11784,
+   "width": 3,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    5
+   ],
+   "png": "VC00005.PNG",
+   "label": "DWARF_SIT_1"
+  },
+  {
+   "offset": 12984,
+   "data_offset": 12988,
+   "width": 3,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    6
+   ],
+   "png": "VC00006.PNG",
+   "label": "DWARF_SIT_2"
+  },
+  {
+   "offset": 14188,
+   "data_offset": 14192,
+   "width": 4,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    7
+   ],
+   "png": "VC00007.PNG",
+   "label": "DWARF_SIT_3"
+  },
+  {
+   "offset": 15792,
+   "data_offset": 15796,
+   "width": 4,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    8
+   ],
+   "png": "VC00008.PNG",
+   "label": "DWARF_SIT_4"
+  },
+  {
+   "offset": 17396,
+   "data_offset": 17400,
+   "width": 4,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    9
+   ],
+   "png": "VC00009.PNG",
+   "label": "DWARF_SIT_5"
+  },
+  {
+   "offset": 19000,
+   "data_offset": 19004,
+   "width": 3,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    10
+   ],
+   "png": "VC0000A.PNG",
+   "label": "DWARF_SIT_6"
+  },
+  {
+   "offset": 20204,
+   "data_offset": 20208,
+   "width": 3,
+   "height": 50,
+   "layout": "block",
+   "ids": [
+    11
+   ],
+   "png": "VC0000B.PNG",
+   "label": "DWARF_SIT_7"
+  }
+ ]
+}

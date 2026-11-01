@@ -1,0 +1,154 @@
+{
+ "format": "offset-bank",
+ "source": "VCIN3.DAT",
+ "size": 17712,
+ "sha256": "0d63ee5083c281e3f36aedc0ea8a7b1c1fa456f6b7ec3c2ecce1b82a8672a890",
+ "layout": "block",
+ "table_bytes": 48,
+ "entries": [
+  {
+   "offset": 48,
+   "data_offset": 52,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VC30000.PNG",
+   "label": "GATE_SCENE"
+  },
+  {
+   "offset": 8052,
+   "data_offset": 8056,
+   "width": 3,
+   "height": 24,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VC30001.PNG",
+   "label": "GATE_FLOOR_1"
+  },
+  {
+   "offset": 8632,
+   "data_offset": 8636,
+   "width": 4,
+   "height": 24,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VC30002.PNG",
+   "label": "GATE_FLOOR_2"
+  },
+  {
+   "offset": 9404,
+   "data_offset": 9408,
+   "width": 4,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    3
+   ],
+   "png": "VC30003.PNG",
+   "label": "GATE_FLOOR_3"
+  },
+  {
+   "offset": 10272,
+   "data_offset": 10276,
+   "width": 5,
+   "height": 27,
+   "layout": "block",
+   "ids": [
+    4
+   ],
+   "png": "VC30004.PNG",
+   "label": "GATE_FLOOR_4"
+  },
+  {
+   "offset": 11356,
+   "data_offset": 11360,
+   "width": 5,
+   "height": 28,
+   "layout": "block",
+   "ids": [
+    5
+   ],
+   "png": "VC30005.PNG",
+   "label": "GATE_FLOOR_5"
+  },
+  {
+   "offset": 12480,
+   "data_offset": 12484,
+   "width": 4,
+   "height": 28,
+   "layout": "block",
+   "ids": [
+    6
+   ],
+   "png": "VC30006.PNG",
+   "label": "GATE_FLOOR_6"
+  },
+  {
+   "offset": 13380,
+   "data_offset": 13384,
+   "width": 3,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    7
+   ],
+   "png": "VC30007.PNG",
+   "label": "GATE_DOOR_1"
+  },
+  {
+   "offset": 14560,
+   "data_offset": 14564,
+   "width": 2,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    8
+   ],
+   "png": "VC30008.PNG",
+   "label": "GATE_DOOR_2"
+  },
+  {
+   "offset": 15348,
+   "data_offset": 15352,
+   "width": 2,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    9
+   ],
+   "png": "VC30009.PNG",
+   "label": "GATE_DOOR_3"
+  },
+  {
+   "offset": 16136,
+   "data_offset": 16140,
+   "width": 2,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    10
+   ],
+   "png": "VC3000A.PNG",
+   "label": "GATE_DOOR_4"
+  },
+  {
+   "offset": 16924,
+   "data_offset": 16928,
+   "width": 2,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    11
+   ],
+   "png": "VC3000B.PNG",
+   "label": "GATE_DOOR_5"
+  }
+ ]
+}

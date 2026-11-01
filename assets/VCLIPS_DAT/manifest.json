@@ -1,0 +1,263 @@
+{
+ "format": "offset-bank",
+ "source": "VCLIPS.DAT",
+ "size": 16044,
+ "sha256": "cbc6c1205b87ce59e0f6873ef4d5027ffa3835afe11fe88ab8376c302a59f91f",
+ "layout": "block",
+ "table_bytes": 3848,
+ "entries": [
+  {
+   "offset": 3848,
+   "data_offset": 3852,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VCL0000.PNG",
+   "label": ""
+  },
+  {
+   "offset": 4364,
+   "data_offset": 4368,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VCL0002.PNG",
+   "label": ""
+  },
+  {
+   "offset": 4880,
+   "data_offset": 4884,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    5
+   ],
+   "png": "VCL0005.PNG",
+   "label": ""
+  },
+  {
+   "offset": 5396,
+   "data_offset": 5400,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    3
+   ],
+   "png": "VCL0003.PNG",
+   "label": ""
+  },
+  {
+   "offset": 5912,
+   "data_offset": 5916,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VCL0001.PNG",
+   "label": ""
+  },
+  {
+   "offset": 6428,
+   "data_offset": 6432,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    6
+   ],
+   "png": "VCL0006.PNG",
+   "label": ""
+  },
+  {
+   "offset": 6944,
+   "data_offset": 6948,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    7
+   ],
+   "png": "VCL0007.PNG",
+   "label": ""
+  },
+  {
+   "offset": 7460,
+   "data_offset": 7464,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    9
+   ],
+   "png": "VCL0009.PNG",
+   "label": ""
+  },
+  {
+   "offset": 7976,
+   "data_offset": 7980,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    8
+   ],
+   "png": "VCL0008.PNG",
+   "label": ""
+  },
+  {
+   "offset": 8492,
+   "data_offset": 8496,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    13
+   ],
+   "png": "VCL000D.PNG",
+   "label": ""
+  },
+  {
+   "offset": 9008,
+   "data_offset": 9012,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    12
+   ],
+   "png": "VCL000C.PNG",
+   "label": ""
+  },
+  {
+   "offset": 9524,
+   "data_offset": 9528,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    11
+   ],
+   "png": "VCL000B.PNG",
+   "label": ""
+  },
+  {
+   "offset": 10040,
+   "data_offset": 10044,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    10
+   ],
+   "png": "VCL000A.PNG",
+   "label": ""
+  },
+  {
+   "offset": 10556,
+   "data_offset": 10560,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    14
+   ],
+   "png": "VCL000E.PNG",
+   "label": ""
+  },
+  {
+   "offset": 11072,
+   "data_offset": 11076,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    15,
+    16
+   ],
+   "png": "VCL000F.PNG",
+   "label": ""
+  },
+  {
+   "offset": 11588,
+   "data_offset": 11592,
+   "width": 3,
+   "height": 16,
+   "layout": "block",
+   "ids": [
+    29
+   ],
+   "png": "VCL001D.PNG",
+   "label": "MAP_SCROLL_ARROW"
+  },
+  {
+   "offset": 11976,
+   "data_offset": 11980,
+   "width": 4,
+   "height": 64,
+   "layout": "block",
+   "ids": [
+    37
+   ],
+   "png": "VCL0025.PNG",
+   "label": "PORTRAIT_FRAME"
+  },
+  {
+   "offset": 14028,
+   "data_offset": 14032,
+   "width": 2,
+   "height": 32,
+   "layout": "block",
+   "ids": [
+    36
+   ],
+   "png": "VCL0024.PNG",
+   "label": "FRAME_RING"
+  },
+  {
+   "offset": 14544,
+   "data_offset": 14548,
+   "width": 2,
+   "height": 31,
+   "layout": "block",
+   "ids": [
+    40
+   ],
+   "png": "VCL0028.PNG",
+   "label": "HERO_CURSOR"
+  },
+  {
+   "offset": 15044,
+   "data_offset": 15048,
+   "width": 2,
+   "height": 31,
+   "layout": "block",
+   "ids": [
+    41
+   ],
+   "png": "VCL0029.PNG",
+   "label": ""
+  },
+  {
+   "offset": 15544,
+   "data_offset": 15548,
+   "width": 2,
+   "height": 31,
+   "layout": "block",
+   "ids": [
+    42
+   ],
+   "png": "VCL002A.PNG",
+   "label": ""
+  }
+ ]
+}

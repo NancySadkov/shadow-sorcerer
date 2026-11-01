@@ -1,0 +1,46 @@
+{
+ "format": "offset-bank",
+ "source": "VCIN4.DAT",
+ "size": 24020,
+ "sha256": "47e6881b205929d4e6e01d818f6a7e9b7529127338bc3992c2ad797b0d789e71",
+ "layout": "block",
+ "table_bytes": 8,
+ "entries": [
+  {
+   "offset": 8,
+   "data_offset": 12,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VC40000.PNG",
+   "label": "COUNCIL_FRAME_1"
+  },
+  {
+   "offset": 8012,
+   "data_offset": 8016,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VC40001.PNG",
+   "label": "COUNCIL_FRAME_2"
+  },
+  {
+   "offset": 16016,
+   "data_offset": 16020,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VC40002.PNG",
+   "label": "COUNCIL_FRAME_3"
+  }
+ ]
+}

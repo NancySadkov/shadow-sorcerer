@@ -1,0 +1,94 @@
+{
+ "format": "offset-bank",
+ "source": "VCIN2.DAT",
+ "size": 21456,
+ "sha256": "ad137c117f7f999b3cb0f86ba378b1568951fc3f77034e81dd9fd5135e474e70",
+ "layout": "block",
+ "table_bytes": 28,
+ "entries": [
+  {
+   "offset": 28,
+   "data_offset": 32,
+   "width": 10,
+   "height": 100,
+   "layout": "block",
+   "ids": [
+    0
+   ],
+   "png": "VC20000.PNG",
+   "label": "DOOR_SCENE"
+  },
+  {
+   "offset": 8032,
+   "data_offset": 8036,
+   "width": 4,
+   "height": 73,
+   "layout": "block",
+   "ids": [
+    1
+   ],
+   "png": "VC20001.PNG",
+   "label": "DOOR_OPEN_1"
+  },
+  {
+   "offset": 10372,
+   "data_offset": 10376,
+   "width": 5,
+   "height": 73,
+   "layout": "block",
+   "ids": [
+    2
+   ],
+   "png": "VC20002.PNG",
+   "label": "DOOR_OPEN_2"
+  },
+  {
+   "offset": 13296,
+   "data_offset": 13300,
+   "width": 5,
+   "height": 70,
+   "layout": "block",
+   "ids": [
+    3
+   ],
+   "png": "VC20003.PNG",
+   "label": "DOOR_OPEN_3"
+  },
+  {
+   "offset": 16100,
+   "data_offset": 16104,
+   "width": 4,
+   "height": 65,
+   "layout": "block",
+   "ids": [
+    4
+   ],
+   "png": "VC20004.PNG",
+   "label": "DOOR_OPEN_4"
+  },
+  {
+   "offset": 18184,
+   "data_offset": 18188,
+   "width": 4,
+   "height": 53,
+   "layout": "block",
+   "ids": [
+    5
+   ],
+   "png": "VC20005.PNG",
+   "label": "DOOR_OPEN_5"
+  },
+  {
+   "offset": 19884,
+   "data_offset": 19888,
+   "width": 4,
+   "height": 49,
+   "layout": "block",
+   "ids": [
+    6
+   ],
+   "png": "VC20006.PNG",
+   "label": "DOOR_OPEN_6"
+  }
+ ]
+}

@@ -1,0 +1,55 @@
+{
+ "format": "raw",
+ "entries": [
+  {
+   "source": "MAPED",
+   "size": 23120,
+   "sha256": "055c8b94880314cf9f9dd77bf64d155caef86897e20e0ac2617276ebd7c39081"
+  },
+  {
+   "source": "FAT.ADB",
+   "size": 2458,
+   "sha256": "42d52fca0fa7420ac9d255ab4b08e3197a15fa48b863a99d2771f83a1bd5f97e"
+  },
+  {
+   "source": "SAVEGAME._A_",
+   "size": 27432,
+   "sha256": "3552486aa363f8ef777219ffb2d3c2a65ace83cf9edb31b91849dac55a4a770e"
+  },
+  {
+   "source": "SOUND.DRV",
+   "size": 9687,
+   "sha256": "66d6345d4bfaa6e3acd37e257565d27b750012e16d4b261476e6bbdf232b255c"
+  },
+  {
+   "source": "ADLIB.ADV",
+   "size": 18191,
+   "sha256": "859cd95c300632f8786c10faf75adb53d5988e7486ea81e46ab381ab13fbb4ed"
+  },
+  {
+   "source": "MT32MPU.ADV",
+   "size": 11638,
+   "sha256": "4a38566dc34d48e5f1d21ad49950e6867adaf2ff0534e04eb06b3f5413ea1936"
+  },
+  {
+   "source": "GAME.EXE",
+   "size": 105429,
+   "sha256": "cab2d0ddd3813429efc87e3fc1e3bf669cb493d213c524c2bccf7e0713067c4e"
+  },
+  {
+   "source": "INTRO.EXE",
+   "size": 19499,
+   "sha256": "d1cd58ea13755f6d51231cb0caebae7d953c045180bef0180c884bcea7924b14"
+  },
+  {
+   "source": "SHADOW.COM",
+   "size": 8044,
+   "sha256": "15c6d6a8484db790b45dafee0ecbae3cd3e25147f87b3ec48e7c025c41d27e86"
+  },
+  {
+   "source": "SS.BAT",
+   "size": 14,
+   "sha256": "04ef887687452f293def6137423403a8a18df7347dd3b9078670ab372df54719"
+  }
+ ]
+}

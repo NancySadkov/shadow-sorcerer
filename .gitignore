@@ -1,0 +1,10 @@
+# Build output and DOSBox scratch space
+/tmp/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / OS
+.DS_Store
+Thumbs.db
