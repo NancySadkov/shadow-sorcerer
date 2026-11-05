@@ -10,6 +10,12 @@
 #include "types.h"
 #include "ids.h"
 
+#ifdef SS_SDL
+/* The DOS structs are laid out with 2-byte alignment rules; pack them so the
+   recovered size checks (and the save-slot image) stay byte-exact. */
+#pragma pack(push, 1)
+#endif
+
 struct word_bytes {
 	uint8 lo;
 	uint8 hi;
@@ -68,9 +74,16 @@ struct node_rec {
 	uint16 type;
 	uint16 x;
 	uint16 y;
+#ifdef SS_SDL
+	/* The DOS build stores near pointers in these 16-bit fields. */
+	uintptr_t data;
+	struct node_rec *sibling;
+	struct node_rec *child;
+#else
 	uint16 data;
 	uint16 sibling;
 	uint16 child;
+#endif
 };
 
 #define NODE(p) ((struct node_rec *)(p))
@@ -429,5 +442,9 @@ struct rect_rec {
 
 #define HERO_SLOT_NONE	0x17
 #define HERO_SLOT_STATE_LIMIT	0x16
+
+#ifdef SS_SDL
+#pragma pack(pop)
+#endif
 
 #endif

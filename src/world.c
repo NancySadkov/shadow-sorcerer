@@ -12,6 +12,11 @@
 #include "shadow.h"
 #include "game.h"
 #include "structs.h"
+#ifdef SS_SDL
+#include "ss_platform.h"
+#include "ss_music.h"
+#include "ss_sfx.h"
+#endif
 
 /* 0x3A4 */
 /* DGROUP 0x2468 */
@@ -325,8 +330,9 @@ void camera_publish_cells(int16 a)
 
 	si = mx2 / 2;
 	col = (si - my + 0x4f) >> 4;			/* 5B9A-5BA7 */
-	g_cursor_tile_x = col;
 	row = (my + si - 0x4f) >> 4;			/* 5BAA-5BB7 */
+
+	g_cursor_tile_x = col;
 	g_cursor_tile_y = row;
 
 	if (w->state != 0 && a != 0)			/* 5BBA-5BC6 */
@@ -338,6 +344,9 @@ void camera_publish_cells(int16 a)
 		w->motion_state = ACTOR_MOTION_GOTO;
 	}
 
+	/* Out-of-grid targets are intentional: record_move_dispatch() detects
+	   the actor crossing the edge and either uses the exit guard (leaving
+	   the site) or pushes it back.  Only the cell cursor is skipped. */
 	if (col < 0 || col > 9 || row < 0 || row > 9)	/* 5BF6-5C0C */
 		return;
 
@@ -440,6 +449,175 @@ int16 move_view(void)
 }
 
 uint16 g_stale_clear_done;					/* 0x9e08 */
+
+#ifdef SS_SDL
+/* SDL port: one-tile walking from the arrow keys / numeric keypad.  It feeds
+   the same target/cooldown fields the map click handler uses, so pathfinding,
+   terrain costs, random encounters and the follower trail all run as usual. */
+int16 port_walk_step(int16 dir)
+{
+	static const int8 step_x[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+	static const int8 step_y[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+	/* Arrow keys (8..11) try the grid axis first, then the two diagonals
+	   that also point that way on screen. */
+	static const int8 arrow_try[4][3] = {
+		{ 0, 7, 1 },   /* up */
+		{ 2, 1, 3 },   /* right */
+		{ 4, 5, 3 },   /* down */
+		{ 6, 7, 5 },   /* left */
+	};
+	struct party_rec *p;
+	int16 gx, gy, tx, ty, cell, tile, kind, dist;
+	int16 try_n = 1, t;
+
+	p = PARTY_REC(PARTY_MAIN);
+	gx = (int16)p->grid_x;
+	gy = (int16)p->grid_y;
+
+	if (dir >= 8) {
+		if (dir > 11)
+			return 0;
+		try_n = 3;
+		dir = (int16)(dir - 8);
+	}
+	if (dir < 0 || dir > 7)
+		return 0;
+	if (g_overworld_phase != 1)
+		return 0;
+
+	for (t = 0; t < try_n; t++) {
+		int16 d = (try_n == 1) ? dir : arrow_try[dir][t];
+
+		tx = (int16)(gx + step_x[d]);
+		ty = (int16)(gy + step_y[d]);
+		if (tx < 0 || ty < 0 || tx >= TERRAIN_WIDTH || ty >= TERRAIN_HEIGHT)
+			continue;
+		cell = (int16)(tx + TERRAIN_WIDTH * ty);
+		tile = (int16)(int8)g_map_tile[cell];
+		kind = tile & TERRAIN_MASK;
+		if ((tile & TILE_VISIBLE) == 0)
+			continue;
+		if (kind == 6 || kind == 8)     /* water: a click refuses these too */
+			continue;
+
+		g_move_speed_shift = 0;
+		(void)path_find_distance(gx, gy, tx, ty, &dist);
+		p->cooldown = (uint16)dist;
+		p->target_x = (uint16)tx;
+		p->target_y = (uint16)ty;
+		return 1;
+	}
+	return 0;
+}
+#endif
+#ifdef SS_SDL
+/* SDL port: one-tile walking in a site scene, from the same keys.  It moves the
+   selection cursor one isometric cell and feeds it through the game's own
+   click handler, which walks the selected hero there. */
+int16 port_site_step(int16 dir)
+{
+	static const int8 step_x[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+	static const int8 step_y[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+	struct actor_rec *w;
+	int16 col, row;
+
+	if (dir < 0 || dir > 11)
+		return 0;
+	if (dir >= 8) {
+		dir = (int16)((dir - 8) * 2);   /* arrow -> grid axis */
+	}
+	w = &g_actor_table[g_selected_hero_slot];
+	if (w->state == 0)
+		return 0;
+
+	col = (int16)(((int16)(w->pixel_x - 8)) >> 4);
+	row = (int16)(((int16)(w->pixel_y - 8)) >> 4);
+	col = (int16)(col + step_x[dir]);
+	row = (int16)(row + step_y[dir]);
+	if (col < 0 || col > 9 || row < 0 || row > 9)
+		return 0;
+
+	g_mouse_x = (uint16)(((col + row) << 4) + 16);
+	g_mouse_y = (uint16)(((row - col) << 3) + 0x77);
+	camera_publish_cells(1);
+	return 1;
+}
+#endif
+#ifdef SS_SDL
+/* Right-click picking: find the hero sprite under the pointer.  The hit
+   rectangle is the visible sprite frame, not a box around the isometric
+   projection: the frame is anchored at its bottom-right corner, so the old
+   symmetric box also covered the floor south/south-east of the hero. */
+int16 port_pick_actor(int16 mx, int16 my)
+{
+	int16 i, best = -1, best_bottom = -0x7fff;
+
+	for (i = 0; i != 4; i++) {
+		struct actor_rec *a = &g_actor_table[i];
+		int16 left, top, right, bottom;
+
+		if (a->state == 0)
+			continue;
+		sprite_actor_rect((int16)a->state - 1, (int16)a->x, (int16)a->y,
+		                  &left, &top, &right, &bottom);
+		if (mx < left || mx >= right || my < top || my >= bottom)
+			continue;
+		/* Actors are painted in (y - x) order, so the sprite with the
+		   lowest bottom edge is the one in front. */
+		if (bottom > best_bottom) {
+			best_bottom = bottom;
+			best = i;
+		}
+	}
+	return best;
+}
+
+/* Monster sprites are not command targets, but a click inside one orders the
+   selected hero to its tile (and the hero's combat orders take over from
+   there). */
+int16 port_pick_monster(int16 mx, int16 my)
+{
+	int16 i, best = -1, best_bottom = -0x7fff;
+
+	for (i = 4; i != ACTOR_COUNT; i++) {
+		struct actor_rec *a = &g_actor_table[i];
+		int16 left, top, right, bottom;
+
+		if (a->state < 5 || a->mode == ACTOR_MODE_RETIRED)
+			continue;
+		sprite_monster_rect((int16)a->state, (int16)a->x, (int16)a->y,
+		                    &left, &top, &right, &bottom);
+		if (mx < left || mx >= right || my < top || my >= bottom)
+			continue;
+		if (bottom > best_bottom) {
+			best_bottom = bottom;
+			best = i;
+		}
+	}
+	return best;
+}
+
+/* A clicked monster sprite, or -1.  hero_window_point_draw() uses this so a
+   click on the raised body of a large creature aims at the creature rather
+   than at the floor cell that the isometric inverse maps the click to. */
+int16 g_aim_actor = -1;
+
+int16 port_aim_clicked_monster(void)
+{
+	int16 mon = port_pick_monster((int16)g_mouse_x, (int16)g_mouse_y);
+
+	if (mon >= 4 && mon < ACTOR_COUNT
+	    && g_actor_table[mon].state >= 5
+	    && g_actor_table[mon].mode != ACTOR_MODE_RETIRED) {
+		g_cursor_tile_x = (uint16)((int16)g_actor_table[mon].x >> 4);
+		g_cursor_tile_y = (uint16)((int16)g_actor_table[mon].y >> 4);
+		g_aim_actor = mon;
+	} else {
+		g_aim_actor = -1;
+	}
+	return mon;
+}
+#endif
 uint16 g_terrain_change_done;					/* 0x9f16 */
 uint16 g_window_stamp;					/* 0xa9d0 */
 extern uint16 g_move_speed_shift;				/* 0x2272 */
@@ -520,6 +698,12 @@ void terrain_change(void)
 	}
 
 	g_overworld_phase = 2;
+#ifdef SS_SDL
+	/* Entering a site starts the exploration loop; the map itself only gets
+	   the one-shot overworld sting from tile_set_position(). */
+	if ((uint8)g_map_mode_char != 1)
+		ss_music_play(SS_MUSIC_DUNGEON);
+#endif
 }
 
 /* 0xA17D */
@@ -570,6 +754,7 @@ int16 spawn_descriptor(int16 request, int16 w, int16 h)
 	}
 	if (i == 15)
 		slot = &g_actor_table[15];
+	actor_clear_provoke(i);
 
 	slot->state = (uint8)kind;
 	slot->mode = 0;
@@ -731,7 +916,6 @@ void spawn_monsters(int16 which)
 	}
 }
 
-extern int16 sprite_draw_block(int16, int16, int16, int16, uint16);	/* 0x9CD3 */
 
 /* DGROUP 0x8AB4 */
 
@@ -934,7 +1118,20 @@ void draw_presentation(int16 presentation)
 		switch (op) {
 		case SCRIPT_OP_DRAW_VMPL: {
 			int16 row = *p++, column = *p++, sprite = *p++;
+#ifdef SS_SDL
+			/* The clip's block bank starts with a table of sprite
+			   offsets; resolve it before handing the port a pointer. */
+			{
+				uint16 seg = g_vmpl_para[0];
+				uint16 off = *SS_PTR(const uint16, seg,
+				                     (uint16)(sprite * 2));
+
+				(void)sprite_draw_block(sprite, 1, column, row,
+				         SS_PTR(const uint8, seg, off));
+			}
+#else
 			(void)sprite_draw_block(sprite, 1, column, row, g_vmpl_para[0]);
+#endif
 			break;
 		}
 		case SCRIPT_OP_CLEAR_REGION: {
@@ -947,9 +1144,13 @@ void draw_presentation(int16 presentation)
 			break;
 		case SCRIPT_OP_WAIT_TICKS: {
 			uint16 ticks = (uint16)*p++;
+#ifdef SS_SDL
+			ss_wait_ticks((int32)ticks);
+#else
 			g_shadow_tick_count = 0;
 			while (ticks > g_shadow_tick_count)
 				;
+#endif
 			break;
 		}
 		case SCRIPT_OP_WAIT_EVENT:
@@ -1040,6 +1241,8 @@ int16 choose_target(struct actor_rec *rec, int16 tag, int16 start, int16 end)
 
 		if (b == 0)
 			continue;				/* 3D2B-3D2F */
+		if (start >= 4 && actor_is_neutral(win))
+			continue;
 		if ((b & ACTOR_STATE_INACTIVE) != 0)
 			continue;
 		if ((rec->x | rec->y) == 0)
@@ -1156,25 +1359,25 @@ int16 state_query(int16 slot)
 	w = (uint16)g_hero_slots[slot].state;	/* 0ACD-0ADE */
 	rec = CHAR_REC(character_at(g_record_addr[w & 0xff]));		/* 0AE1-0AEC */
 
-	if ((int16)rec->ranged_weapon.icon == 3) {
+	if ((int16)rec->ranged_weapon.icon == RANGED_WEAPON_BOW) {
 		held = (int16)(int8)rec->action_code;
-		if (held != ACTION_PAIR_IF_MODE3_0E && held != ACTION_PAIR_IF_MODE3_0F)
+		if (held != ACTION_LOAD_BOW_ARROWS && held != ACTION_LOAD_BOW_ARROWS_PLUS2)
 			return 0;				/* 0B25-0B27 */
 		if (--(rec->action_timer) == 0)	/* 0B29-0B2C */
 			rec->action_code = 0;			/* 0B2E-0B31 */
-		return (held == ACTION_PAIR_IF_MODE3_0E) ? EFFECT_KIND_DEACTIVATE_6 : EFFECT_KIND_DEACTIVATE_7;			/* 0B35-0B43 */
+		return (held == ACTION_LOAD_BOW_ARROWS) ? EFFECT_KIND_CLEAR_ARROWS : EFFECT_KIND_CLEAR_ARROWS_PLUS2;			/* 0B35-0B43 */
 	}
-	if ((int16)rec->ranged_weapon.icon == 6)
-		return EFFECT_KIND_DEACTIVATE_8;			/* 0B60-0B63 */
-	if ((int16)rec->ranged_weapon.icon == WEAPON_RECORD_9) {
+	if ((int16)rec->ranged_weapon.icon == RANGED_WEAPON_HOOPAK)
+		return EFFECT_KIND_CLEAR_STONES;			/* 0B60-0B63 */
+	if ((int16)rec->ranged_weapon.icon == RANGED_WEAPON_SPEAR) {
 		rec->ranged_weapon.icon = 0;			/* 0AF6-0AF9 */
-		award_claim(1, WEAPON_RECORD_9);				/* 0AFE-0B09 */
-		return EFFECT_KIND_RECOVER_WEAPON_9;		/* 0B0C-0B0F */
+		award_claim(1, WEAPON_RECORD_SPEAR);				/* 0AFE-0B09 */
+		return EFFECT_KIND_RECOVER_SPEAR;		/* 0B0C-0B0F */
 	}
-	if ((int16)rec->ranged_weapon.icon == WEAPON_RECORD_17) {
+	if ((int16)rec->ranged_weapon.icon == RANGED_WEAPON_THROWING_AXE) {
 		rec->ranged_weapon.icon = 0;			/* 0B45-0B48 */
-		award_claim(7, WEAPON_RECORD_17);				/* 0B4D-0B58 */
-		return EFFECT_KIND_RECOVER_WEAPON_17;	/* 0B5B-0B5E */
+		award_claim(7, WEAPON_RECORD_THROWING_AXE);				/* 0B4D-0B58 */
+		return EFFECT_KIND_RECOVER_THROWING_AXE;	/* 0B5B-0B5E */
 	}
 	return 0;							/* 0B65-0B67 */
 }
@@ -1596,7 +1799,7 @@ void draw_map_items(void)
 		uint16 w;
 
 		if (p->id == 0)
-			break;
+			continue;			/* 0xBCF5 jumps to the loop increment */
 		if ((SITE_FLAG_LO(p) & 1) == 0)
 			continue;
 		if ((int16)p->map != (int16)(int8)g_map_mode_char)
@@ -1611,7 +1814,7 @@ void draw_map_items(void)
 			x = (int16)p->x;
 			y = (int16)p->y;
 			if (x > 0 && y > 0 && x < 0xa0 && y < 0xa0)
-				(void)free_list_insert(1, 0xa0 - x, y, 2, (int16)p, 0, 0);	/* BD3C-BD56 */
+				(void)free_list_insert(1, 0xa0 - x, y, 2, FREE_DATA(p), 0, 0);	/* BD3C-BD56 */
 		} else if ((int16)g_detect_invisible_ticks != 0) {		/* BD5B-BD65 */
 			SITE_FLAG_HI(p) &= 0xfe;
 		}
@@ -1644,20 +1847,20 @@ int16 setting_apply_choice(int16 sel)
 		return 0;
 	case CLERIC_PROTECTION_FROM_EVIL:					/* 2676-267F */
 		g_protection_duration = 0x78 * g_hold_length;
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case CLERIC_BLESS:
 		g_bless_duration = g_hold_length * 15;
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case CLERIC_DETECT_MAGIC:					/* 26B0-26C4 */
 		g_detect_magic_ticks = 0x14 * g_hold_length;
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case CLERIC_FIND_TRAPS:					/* 26C9-26E2 */
 		clock_hold_span();
 		g_find_traps_gate = g_hold_length * 3;
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case CLERIC_HOLD_PERSON:
 
@@ -1667,8 +1870,9 @@ int16 setting_apply_choice(int16 sel)
 		hero_slot_click_arm();
 		return -1;
 	case CLERIC_PRAYER:					/* 26FD-2713 */
+		g_bless_duration = g_hold_length * 30;
 		g_protection_duration = TICKS_PER_SECOND * g_hold_length;
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case CLERIC_DISPEL_MAGIC:					/* 2715-271D */
 		g_spell_purge_pending = 2;
@@ -1780,9 +1984,17 @@ int16 hero_member_damage(int16 idx, int16 amount)
 		rp->hp = 0;
 
 		hero_member_retire(idx);					/* AE10-AE13 */
+#ifdef SS_SDL
+		(void)ss_sfx_play(SS_SFX_DEATH);
+#endif
 	}
 
-	sound_request_max(SOUND_REQUEST_DAMAGE);						/* AE2D-AE34 */
+#ifdef SS_SDL
+	if (rp->hp != 0)
+		sound_request_damage();					/* AE2D-AE34 */
+#else
+	sound_request_max(SOUND_REQUEST_DAMAGE);				/* AE2D-AE34 */
+#endif
 	return 0;
 
 }
@@ -1799,7 +2011,7 @@ int16 setting_apply_checked(int16 sel)
 	case SPELL_DETECT_MAGIC:			/* 290E-2927 */
 		g_detect_magic_ticks = DETECT_MAGIC_ANIM_FACTOR * g_hold_length;
 		tile_event_apply();
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case SPELL_CHARM:
 
@@ -1819,7 +2031,7 @@ int16 setting_apply_checked(int16 sel)
 		g_detect_invisible_ticks = DETECT_INVIS_REDRAW_FACTOR * g_hold_length;
 
 		tile_event_apply();
-		sound_request_max(SOUND_REQUEST_MENU);
+		sound_request_spellcast();
 		return 0;
 	case SPELL_FIREBALL:				/* 2988-298B */
 		return SPELL_EFFECT_FIREBALL;
@@ -1884,6 +2096,9 @@ int16 actor_attack_character(struct actor_rec *actor)
 	int16 amt;
 	int16 r;
 
+	if (actor_is_neutral(actor))
+		actor_provoke((int16)(actor - g_actor_table));
+
 	idx = (int16)(int8)actor->anchor_index;			/* AC69-AC6D */
 	kind = (int16)(int8)actor->state - 5;			/* AC70-AC76 */
 
@@ -1912,6 +2127,10 @@ int16 actor_attack_character(struct actor_rec *actor)
 	 && amt != 0)
 		--amt;
 
+#ifdef SS_SDL
+	amt = (int16)ss_scale_monster_damage((int)amt);
+#endif
+
 	if (ROLL_D100() > 50)
 		rp->hp = (uint16)((int16)rp->hp - amt);
 
@@ -1923,7 +2142,7 @@ int16 actor_attack_character(struct actor_rec *actor)
 		hero_member_retire(idx);					/* AD60-AD63 */
 	}
 
-	sound_request_max(SOUND_REQUEST_MONSTER_HIT);
+	sound_request_or_sample(SOUND_REQUEST_MONSTER_HIT);
 	return 0;
 }
 
@@ -1937,11 +2156,50 @@ int16 hero_window_point_draw(int16 slot, int16 kind)
 	int16 ax, ay;
 	uint16 sqx, sqy, hix, hiy;
 	int16 dist, vx, vy, step, code, r, x, y;
+	int16 tile_x, tile_y, mi, target_index = -1;
+
 
 	win = &g_actor_table[slot];					/* 113E-1147 */
 
-	g_cursor_tile_x = (g_cursor_tile_x << 4) + 8;
-	g_cursor_tile_y = (g_cursor_tile_y << 4) + 8;				/* 1155-1159 */
+	tile_x = (int16)g_cursor_tile_x;
+	tile_y = (int16)g_cursor_tile_y;
+	g_cursor_tile_x = (uint16)((tile_x << 4) + 8);
+	g_cursor_tile_y = (uint16)((tile_y << 4) + 8);			/* 1155-1159 */
+
+	/* Aim at the monster standing on the target cell rather than at the
+	   cell centre.  The AI and a mouse click both supply only the cell, but
+	   the sprite is drawn at the actor's exact position; aiming at the
+	   centre made projectiles pass through the edge of a moving sprite.
+	   Hero-hit kinds are aimed at heroes, so only monster-targeted effects
+	   are snapped. */
+	if (kind < EFFECT_KIND_HERO_HIT_BASE) {
+		/* A monster clicked in the command/target flow takes priority, so
+		   two creatures sharing a cell cannot steal each other's aim. */
+		if (g_aim_actor >= 4 && g_aim_actor < ACTOR_COUNT) {
+			struct actor_rec *m = &g_actor_table[g_aim_actor];
+
+			if (m->state >= 5 && m->mode != ACTOR_MODE_RETIRED
+			    && ((int16)m->x >> 4) == tile_x
+			    && ((int16)m->y >> 4) == tile_y) {
+				g_cursor_tile_x = (uint16)m->x;
+				g_cursor_tile_y = (uint16)m->y;
+				target_index = g_aim_actor;
+			}
+		}
+		for (mi = 4; target_index < 0 && mi < ACTOR_COUNT; mi++) {
+			struct actor_rec *m = &g_actor_table[mi];
+
+			if (m->state < 5 || m->mode == ACTOR_MODE_RETIRED)
+				continue;
+			if (((int16)m->x >> 4) == tile_x && ((int16)m->y >> 4) == tile_y) {
+				g_cursor_tile_x = (uint16)m->x;
+				g_cursor_tile_y = (uint16)m->y;
+				target_index = mi;
+				break;
+			}
+		}
+	}
+	g_aim_actor = -1;
 
 	dx = (int16)win->x - (int16)g_cursor_tile_x;			/* 1160-1167 */
 	dy = (int16)win->y - (int16)g_cursor_tile_y;			/* 116D-1174 */
@@ -1954,9 +2212,11 @@ int16 hero_window_point_draw(int16 slot, int16 kind)
 	mul16((uint16)qx, (uint16)qx, &sqx, &hix);				/* 1192-1197 */
 	mul16((uint16)qy, (uint16)qy, &sqy, &hiy);				/* 1199-119E */
 	dist = isqrt_word((uint16)(sqx + sqy), 0);				/* 11A0-11A7 */
+	if (dist == 0)
+		return 0;
 
-	vy = (int16)((uint16)((uint16)qy << 3) / (uint16)dist);		/* 11AA-11B7 */
-	vx = (int16)((uint16)((uint16)qx << 3) / (uint16)dist);		/* 11BA-11C7 */
+	vy = (int16)(((int16)(uint16)((uint16)qy << 3)) / dist);		/* 11AA-11B7 */
+	vx = (int16)(((int16)(uint16)((uint16)qx << 3)) / dist);		/* 11BA-11C7 */
 
 	ax = abs_w(dx);							/* 11CA-11D3 */
 	ay = abs_w(dy);							/* 11D6-11DF */

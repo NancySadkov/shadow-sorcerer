@@ -5,12 +5,32 @@
 */
 
 #include "names.h"
+#include "ids.h"
 
 #include <dos.h>
+
+#ifdef SS_SDL
+#include "ss_music.h"
+#endif
 
 uint16 g_driver_seg;                     /* 0x9442 */
 static uint16 g_entry_off;               /* 0x9440 */
 
+#ifdef SS_SDL
+#define G_DISP_SET(p)  (g_disp_ptr = (const uint8 *)(p))
+#define G_DISP_SET2(p) (g_disp_ptr2 = (const uint8 *)(p))
+#else
+#define G_DISP_SET(p)  (g_disp_ptr = (uint16)(p))
+#define G_DISP_SET2(p) (g_disp_ptr2 = (uint16)(p))
+#endif
+
+#ifdef SS_SDL
+/* The John Miles driver is 16-bit DOS code; the port only plays the
+   PC-speaker bank, so the driver entry points are inert. */
+void driver_start(int16 mode) { (void)mode; }
+void driver_stop(void) { }
+void driver_entry(int16 entry, int16 arg) { (void)entry; (void)arg; }
+#else
 union far_pointer {
     uint16 far *pw;
     struct { uint16 off, seg; } r;
@@ -68,6 +88,7 @@ void driver_entry(int16 entry, int16 arg)
 	target.r.off = g_entry_off;
 	target.fn(arg);
 }
+#endif
 
 #include "game.h"
 
@@ -80,9 +101,14 @@ extern volatile uint16 g_disp_flag;
 extern volatile uint16 g_disp_state;
 extern volatile uint16 g_disp_control;
 extern volatile uint16 g_disp_clear;
+#ifdef SS_SDL
+extern volatile const uint8 *g_disp_ptr;
+extern volatile const uint8 *g_disp_ptr2;
+#else
 extern volatile uint16 g_disp_ptr;
 extern volatile uint16 g_disp_ptr2;
-extern volatile void (*g_disp_handler)(void);
+#endif
+extern void (*volatile g_disp_handler)(void);
 void tick_handler_type0(void);				/* 0xD003 */
 void tick_handler_type1(void);				/* 0xD07F */
 void tick_handler_type2(void);				/* 0xCFA4 */
@@ -276,8 +302,8 @@ void sound_start(int16 sel)
 		g_disp_handler = tick_handler_type2;
 		d = *(const uint16 *)s;			/* CF09-CF0F */
 		s += 2;
-		g_disp_ptr = (uint16)s;
-		g_disp_ptr2 = (uint16)s;
+		G_DISP_SET(s);
+		G_DISP_SET2(s);
 		(void)pit_reload((int16)d);
 		g_disp_last = g_disp_index;
 
@@ -285,7 +311,7 @@ void sound_start(int16 sel)
 		return;
 	}
 
-	g_disp_ptr = (uint16)s;
+	G_DISP_SET(s);
 	g_disp_clear = 0;						/* CF37-CF39 */
 	(void)pit_reload(-1);				/* CF3D-CF3E */
 	g_disp_last = 1;						/* CF41-CF43 */
@@ -297,6 +323,17 @@ void sound_start_force(int16 sel)
 {
 	sound_start(sel);				/* CE8D-CE90 */
 }
+
+#ifdef SS_SDL
+/* The port separates the music and effects volume controls.  Melody
+   sequences are the game's music; everything else is an effect. */
+int ss_sound_is_music(void)
+{
+	if ((int16)g_disp_last == 0)
+		return 0;
+	return (int16)seq_tbl[(uint16)g_disp_index & 0xf].kind == TICK_TYPE_MELODY;
+}
+#endif
 
 extern char g_play_mode;                       /* 0x9E0C */
 uint16 g_driver_stopped;                    /* 0x9E04 */
@@ -314,6 +351,22 @@ extern void driver_entry(int16 entry, int16 arg);
 /* 0xD2C7 */
 void driver_resume_and_call(int16 entry, int16 arg)
 {
+#ifdef SS_SDL
+	/* The DOS driver's queue entries include music cues.  Route the known
+	   ids through the Ogg player; higher requests are effects. */
+	if (arg == DRIVER_SEQ_SILENCE) {
+		ss_music_stop();
+	} else {
+		int16 sequence = arg;
+		if (sequence >= DRIVER_SEQ_BANK_MT32)
+			sequence -= DRIVER_SEQ_BANK_MT32;
+		else if (sequence >= DRIVER_SEQ_BANK_ADLIB)
+			sequence -= DRIVER_SEQ_BANK_ADLIB;
+		if (sequence >= 1 && sequence <= 8)
+			ss_music_play_sequence(sequence);
+	}
+	return;
+#else
 	if (g_driver_stopped != 0 && g_play_mode > 1) {
 		g_driver_stopped = 0;
 		service_registry_reset(0, 0);
@@ -321,6 +374,7 @@ void driver_resume_and_call(int16 entry, int16 arg)
 	}
 
 	driver_entry(entry, arg);
+#endif
 }
 
 /* 0xD309 */

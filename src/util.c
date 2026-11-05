@@ -13,6 +13,10 @@
 #include "game.h"
 #include "structs.h"
 
+#ifdef SS_SDL
+#include "ss_sfx.h"
+#endif
+
 extern int16 shadow_region_clear(int16 and_mask, int16 column, int16 row, int16 width_bytes, int16 height_rows);	/* 0xD45D */
 extern int16 shadow_text_draw(int16 attr, int16 col, int16 row, const char *text);		/* 0xD340 */
 
@@ -103,7 +107,7 @@ int16 text_length(char *s)
 /* 0xD42 */
 
 char *g_messages[33] = {
-	"Shadow Sorceror\r\rVersion UK(B) 1.0", "Joystick Calibration:", "Ensure NUM LOCK key is on", "WRITE DISK ERROR\r Please check disk\r before retrying", "FILE READ ERROR\rUnable to read selected file", "Refugees",
+	"   Shadow Sorceror\r   Version 1.01 SDL\r Port by Nancy Sadkov", "Joystick Calibration:", "Ensure NUM LOCK key is on", "WRITE DISK ERROR\r Please check disk\r before retrying", "FILE READ ERROR\rUnable to read selected file", "Refugees",
 	"HIGH SCORES", "Please insert a 'save game'\r  disk in current drive.\r Press button when ready", "Untitled", "IBM joystick Port 'A'\rTANDY Joystick LEFT socket\rCenter joystick then press\rENTER key\rPress ESC to abort", "Please insert 'DATA Disk'\r   in current drive.\rPress button when ready", "Please insert 'GAME Disk'\r   in current drive.\rPress button when ready",
 	"You failed in your quest\rScore: 0", "Alert:", "Shadow Sorcerer", "Selected character cannot\rcarry any more items", "There are no items\ravailable", "You cannot carry any more\ritems",
 	"Backpack contains nothing.", "You must be with some refugees\rto use this command", "You must be in\rwilderness mode to\rmove the refugees", "Only Raistlin can use\rthis item", "Only Goldmoon can use\rthis item", "You cannot memorize spells\rwhile in combat",
@@ -112,13 +116,6 @@ char *g_messages[33] = {
 };							/* 0x0d42 */
 
 /* 0x8D77 */
-
-struct credits_text {
-	char block_a[228];	/* 0x8D77-0x8E5B */
-	char block_b[228];	/* 0x8E5B-0x8F3F */
-	char block_c[228];	/* 0x8F3F-0x9023 */
-	char block_d[39];	/* 0x9023-0x904A */
-};
 
 struct credits_text credits_08d77 = {	/* 0x8D77 */
 	/* 0x8D77-0x8E5B */
@@ -405,8 +402,74 @@ extern uint16 g_sound_request;				/* 0x9F6A */
 /* 0x07D6 */
 void sound_request_max(int16 request)
 {
+#ifdef SS_SDL
+	/* The named samples replace the DOS beeper.  Effect kinds without a
+	   dedicated role use the sequence id they carried in g_tick_by_kind.
+	   The PC-speaker request is only queued when the sample bank is
+	   missing, so the port never mixes the harsh original tones into the
+	   sampled effects. */
+	if (request <= 0)
+		return;
+	if (ss_sfx_play_tick((int)request))
+		return;
+	if (ss_sfx_play(SS_SFX_HURT))
+		return;
+#endif
 	if (request > (int16)g_sound_request)
 		g_sound_request = (uint16)request;	/* 07E1-07E4 */
+}
+
+/* Port helper: prefer the named Amiga sample; fall back to the PC-speaker
+   request when the sample bank is absent. */
+void sound_request_or_sample(int16 request)
+{
+#ifdef SS_SDL
+	if (ss_sfx_play_request((int)request))
+		return;
+#endif
+	sound_request_max(request);
+}
+
+/* Play a specific named sample while keeping the DOS request as fallback.
+   Used where the DOS request id and the Amiga sample role differ (damage
+   versus death, menu request versus spell cast). */
+void sound_request_or_sample_id(int16 request, int sample)
+{
+#ifdef SS_SDL
+	if (ss_sfx_play(sample))
+		return;
+#endif
+	sound_request_max(request);
+}
+
+void sound_request_or_effect(int16 kind, int16 request)
+{
+#ifdef SS_SDL
+	if (ss_sfx_play_effect((int)kind))
+		return;
+#endif
+	sound_request_max(request);
+}
+
+/* Damage uses the hurt sample; death is triggered from the death paths. */
+void sound_request_damage(void)
+{
+#ifdef SS_SDL
+	if (ss_sfx_play(SS_SFX_HURT))
+		return;
+#endif
+	sound_request_max(SOUND_REQUEST_DAMAGE);
+}
+
+/* The DOS request id for successful spell casts is SOUND_REQUEST_MENU, but
+   the Amiga slot is the spell-cast waveform. */
+void sound_request_spellcast(void)
+{
+#ifdef SS_SDL
+	if (ss_sfx_play(SS_SFX_SPELLCAST))
+		return;
+#endif
+	sound_request_max(SOUND_REQUEST_MENU);
 }
 
 /* 0xA875 */

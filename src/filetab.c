@@ -8,7 +8,6 @@
 #include "ids.h"
 #include <dos.h>
 #include <stdio.h>
-#include <io.h>
 #include "shadow.h"
 #include "structs.h"
 
@@ -142,8 +141,13 @@ void load_pane_blocks(void)
 	while ((n = shadow_load(g_name_vmpl, (uint16)g_mem_next)) == 0)	/* 6164-6175 */
 	{
 		shadow_video_page(SHADOW_PAGE_DEFAULT);			/* 617B-6181 */
+#ifdef SS_SDL
+		shadow_text(SHADOW_TEXT_PAGE_3, DISK_PROMPT_COL, DISK_PROMPT_ROW,
+		            "Please insert the game disk");
+#else
 		shadow_text(SHADOW_TEXT_PAGE_3, DISK_PROMPT_COL, DISK_PROMPT_ROW,
 		            g_text_msg_offset_default);		/* 6184-618D */
+#endif
 		do {
 			if (shadow_poll() != 0)		/* 619A-619F */
 				break;
@@ -217,11 +221,14 @@ union panel_template g_panel_template = { {
 void publish_panel_template(int16 arg)
 {
 	uint16 seg = (uint16)g_mem_next;
-	uint8 far *dst;
 	int16 i;
-
+#ifdef SS_SDL
+	uint8 *dst = SS_PTR(uint8, seg, 0);
+#else
+	uint8 far *dst;
 	FP_SEG(dst) = (uint16)seg;
 	FP_OFF(dst) = 0;
+#endif
 
 	(void)arg;
 	for (i = 0; i < 106; i++)
@@ -247,9 +254,22 @@ extern uint16 g_mem_next;
 
 int16 load_panel_template(char *name)
 {
+	int16 i;
+#ifdef SS_SDL
+	const uint8 *src;
+
+	if (ss_load_asset(name, (uint16)g_mem_next) == 0)
+		return 0;
+
+	src = SS_PTR(const uint8, (uint16)g_mem_next, 0);
+
+	for (i = 0; i < 106; i++)
+		g_panel_template.raw[i] = src[i];
+
+	return -1;
+#else
 	union REGS r;
 	uint8 far *src;
-	int16 i;
 
 	r.x.dx = (uint16)name;
 	r.x.bx = (uint16)g_mem_next;
@@ -266,6 +286,7 @@ int16 load_panel_template(char *name)
 		g_panel_template.raw[i] = src[i];
 
 	return -1;
+#endif
 }
 
 /* 0xE80C */

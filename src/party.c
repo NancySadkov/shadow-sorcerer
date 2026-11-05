@@ -11,6 +11,7 @@
 
 #include "shadow.h"
 
+
 #define REC	22
 #define PARTY(i)	(&g_party_table[i])
 #define CELL(p)		((p)->grid_x + TERRAIN_WIDTH * (p)->grid_y)

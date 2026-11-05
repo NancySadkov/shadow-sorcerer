@@ -6,6 +6,7 @@
 
 #include "names.h"
 
+#ifndef SS_SDL
 #include <dos.h>
 
 #include "shadow.h"
@@ -343,3 +344,5 @@ int16 sprite_draw_block(int16 a, int16 b, int16 c, int16 d, uint16 seg)
 	int86(SHADOW_VECTOR, &r, &r);
 	return r.x.ax;
 }
+
+#endif /* !SS_SDL */

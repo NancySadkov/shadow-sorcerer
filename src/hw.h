@@ -8,8 +8,10 @@
 #ifndef HW_H
 #define HW_H
 
+#ifndef SS_SDL
 int16 inp(int16 port);
 int16 outp(int16 port, int16 value);
+#endif
 
 #define PORT_PIT_CMD     0x43
 #define PORT_PIT_CH0     0x40

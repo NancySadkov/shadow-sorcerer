@@ -12,6 +12,10 @@
 #include "shadow.h"
 #include "game.h"
 #include "structs.h"
+#ifdef SS_SDL
+#include "ss_platform.h"
+#include "ss_sfx.h"
+#endif
 
 #define SITE_AT(i)	(&g_site_table[i])
 
@@ -23,12 +27,38 @@
 	(g_panel_template.words[(i) - CHARACTER_ADDR_COUNT])
 
 uint16 g_free_swept;               /* 0xa2c8 */
+#ifdef SS_SDL
+static struct node_rec ss_free_pool[FREE_SWEEP_MAX + 2];
+#define NODE(p) ((struct node_rec *)(void *)(p))
+#define NODE_AT(p) NODE(p)
+#else
 uint8 g_free_head[434];    /* 0xa2d2 */
+#define NODE(p) ((struct node_rec *)(p))
+#define NODE_AT(p) NODE((uint16)(p))
+#endif
 
 /* 0x8EFA */
 
 int16 free_list_clear_nodes(void)
 {
+#ifdef SS_SDL
+	/* Like the release: keep the sibling chain (the static map cells and
+	   blocking-entity sprites inserted by map_record_show with mode 0) and
+	   only drop the per-frame child chains.  g_free_swept then points just
+	   past the preserved nodes, so new allocations cannot reuse them. */
+	struct node_rec *p;
+
+	if (g_free_swept == 0)
+		return 0;
+	g_free_swept = 0;
+	p = &ss_free_pool[0];
+	do {
+		p->child = 0;
+		p = p->sibling;
+		g_free_swept++;
+	} while (p != 0);
+	return 0;
+#else
 	struct node_rec *p;
 
 	if (g_free_swept == 0)
@@ -37,10 +67,11 @@ int16 free_list_clear_nodes(void)
 	p = NODE(g_free_head);
 	do {
 		p->child = 0;
-		p = NODE((uint16)p->sibling);
+		p = (struct node_rec *)NODE_AT(p->sibling);
 		g_free_swept++;
 	} while (p != 0);
 	return 0;
+#endif
 }
 
 int16  actor_sweep(void);
@@ -81,19 +112,23 @@ int16 draw_terrain_sprites(void)
 			sprite_blit_center(0x78, 0x30, id);
 	}
 
+#ifdef SS_SDL
+	outer = &ss_free_pool[0];
+#else
 	outer = NODE(g_free_head);
+#endif
 	do {
 		(void)draw_free_node(outer);
 
 		if (outer->child != 0) {
-			inner = NODE((uint16)outer->child);
+			inner = (struct node_rec *)NODE_AT(outer->child);
 			do {
 				(void)draw_free_node(inner);
-				inner = NODE((uint16)inner->child);
+				inner = (struct node_rec *)NODE_AT(inner->child);
 			} while (inner != 0);
 		}
 
-		outer = NODE((uint16)outer->sibling);
+		outer = (struct node_rec *)NODE_AT(outer->sibling);
 	} while (outer != 0);
 
 	g_sweep_counter++;
@@ -230,7 +265,11 @@ void creature_behavior_round(void)
 
 uint8 *free_list_alloc(void)
 {
+#ifdef SS_SDL
+	struct node_rec *p = &ss_free_pool[g_free_swept];
+#else
 	struct node_rec *p = NODE(g_free_head + 7u * g_free_swept);
+#endif
 
 	g_free_swept++;
 
@@ -243,7 +282,11 @@ uint8 *free_list_alloc(void)
 
 uint8 *free_list_find_prev(int16 key, int16 flag)
 {
+#ifdef SS_SDL
+	struct node_rec *p = &ss_free_pool[0];
+#else
 	struct node_rec *p = NODE(g_free_head);
+#endif
 	struct node_rec *best = p;
 
 	if (flag != 0) {
@@ -251,14 +294,17 @@ uint8 *free_list_find_prev(int16 key, int16 flag)
 			best = p;
 			if (p->sibling == 0)
 				break;
-			p = NODE((uint16)p->sibling);
+			p = (struct node_rec *)NODE_AT(p->sibling);
 		}
 	} else {
+		/* The release walks the sibling chain here too; only the
+		   comparison differs (`>` stops this branch).  Walking `child`
+		   reversed the mode-0 static order and broke depth sorting. */
 		while ((int16)p->key <= key) {
 			best = p;
-			if (p->child == 0)
+			if (p->sibling == 0)
 				break;
-			p = NODE((uint16)p->child);
+			p = (struct node_rec *)NODE_AT(p->sibling);
 		}
 	}
 	return (uint8 *)best;
@@ -276,16 +322,25 @@ void free_list_insert_child(uint8 *q, uint8 *start)
 		best = p;
 		if (p->child == 0)
 			break;
-		p = NODE((uint16)p->child);
+		p = (struct node_rec *)NODE_AT(p->child);
 	}
 
 	nq->child = best->child;				/* 8D48-8D4B */
+#ifdef SS_SDL
+	best->child = nq;				/* 8D4E-8D54 */
+#else
 	best->child = (uint16)(uint16)q;		/* 8D4E-8D54 */
+#endif
 }
 
-/* 0x8D5C - add */
-
-int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16 x, int16 data, int16 y)
+/* 0x8D5C - add.  Argument 5 is the record pointer and 6/7 are the screen
+   position; the DOS build stores the near pointer and the two words in the
+   same order. */
+#ifdef SS_SDL
+int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, uintptr_t data, int16 x, int16 y)
+#else
+int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16 data, int16 x, int16 y)
+#endif
 {
 	struct node_rec *node;
 	uint8 *prev;
@@ -300,7 +355,11 @@ int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16
 
 	node->type = (uint16)type;
 	node->key = (uint16)key;
+#ifdef SS_SDL
+	node->data = data;
+#else
 	node->data = (uint16)data;
+#endif
 	node->x = (uint16)x;
 	node->y = (uint16)y;
 
@@ -314,13 +373,19 @@ int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16
 	} else {
 		struct node_rec *np = NODE(prev);
 		node->sibling = np->sibling;				/* 8DDE-8DE1 */
+#ifdef SS_SDL
+		np->sibling = node;				/* 8DE4-8DEA */
+#else
 		np->sibling = (uint16)(uint16)node;		/* 8DE4-8DEA */
+#endif
 	}
 	return 0;
 }
 
-uint8 g_kind_gate[5];   /* 0xa9bb */
-uint16      g_kind_segment[5];    /* 0xa282 */
+/* The original selects hero sprite banks through the byte at DGROUP:0xA9BB
+   plus the VMPL slot table, and monster banks through the word table at
+   DGROUP:0xA282 (which overlaps g_monster_bank_segments minus five slots).
+   draw_free_node spells both lookups out directly. */
 
 /* 0x8F33 */
 
@@ -334,11 +399,20 @@ int16 draw_free_node(struct node_rec *node)
 	if ((int16)(int16)(int16)node->key < 0)
 		return 0;
 
+#ifdef SS_SDL
+	if (node->data == 0)
+		return 0;
+#endif
+
 	type = node->type;
 
 	switch ((int16)(type - 1)) {
 	case NODE_TYPE_SINGLE_SPRITE - 1:
+#ifdef SS_SDL
+		p = SPRITE_REC(node->data);
+#else
 		p = SPRITE_REC((uint16)node->data);
+#endif
 		id = (uint16)p->id;
 		if (id == SPRITE_ID_RARE) {
 			if (ROLL_D100() > 10)				/* 8F64-8F71 */
@@ -350,7 +424,11 @@ int16 draw_free_node(struct node_rec *node)
 		return 0;
 
 	case NODE_TYPE_ANIMATED_SPRITE - 1:
+#ifdef SS_SDL
+		p = SPRITE_REC(node->data);
+#else
 		p = SPRITE_REC((uint16)node->data);
+#endif
 		g_sprite_draw_x = (uint16)p->x + (uint16)p->y;	/* 8F9A-8FA0 */
 		g_sprite_draw_y = (int16)((int16)(int16)(uint16)p->y >> 1)
 		           - (int16)((int16)(int16)(uint16)p->x >> 1)
@@ -366,7 +444,11 @@ int16 draw_free_node(struct node_rec *node)
 
 	case NODE_TYPE_ANIMATION_A - 1:
 	case NODE_TYPE_ANIMATION_B - 1:
+#ifdef SS_SDL
+		p = SPRITE_REC(node->data);
+#else
 		p = SPRITE_REC((uint16)node->data);
+#endif
 		g_sprite_draw_x = (uint16)p->stage_next + (uint16)p->iso_y;	/* 9005-900B */
 		g_sprite_draw_y = (int16)((int16)(int16)(uint16)p->iso_y >> 1)
 		           - (int16)((int16)(int16)(uint16)p->stage_next >> 1)
@@ -376,33 +458,56 @@ int16 draw_free_node(struct node_rec *node)
 		g_sprite_stride_index = p->stride_index;						/* 902C-902F */
 		al = (uint16)p->id;
 
-		if (al < 5)
-			(void)sprite_draw_state_frame(g_kind_segment[g_kind_gate[al]]);	/* 903B-904E */
-		else
-			(void)sprite_draw_state_frame(g_kind_segment[al]);				/* 9056-9064 */
+		/* 903B-9064: hero kinds 1..4 select one of the four VMPL banks;
+		   monster kinds 5+ select a VMON bank.  In the release the two
+		   lookups are the byte at 0xA9BB+al (the VMPL slot table) and the
+		   word at 0xA282+al*2 (the VMON segment table minus five slots). */
+		if (al < 5) {
+			if (al != 0)
+				(void)sprite_draw_state_frame(
+					g_vmpl_para[g_vmpl_slot[al - 1]]);
+		} else {
+			(void)sprite_draw_state_frame(
+				g_monster_bank_segments[(int16)al - 5]);
+		}
 
-		if (p->stride_index == 1 &&
-		    (p->stage_flags | p->stage_delay) == 0)
-			goto settled;					/* 9076-9079 */
-		p->count++;
+		/* The animation state lives in the bytes at offsets 5/6/7, which
+		   overlap x/y (type 2) or impulse/action_timer/action_phase
+		   (actors).  The decompiled version used the word fields at
+		   0xA/0xC/0xE here, which overwrote actor.x/y and velocity and
+		   made heroes teleport with corrupted sprites. */
+		{
+			uint8 *pb = (uint8 *)p;
+
+			if (p->stride_index == 1 &&
+			    (p->stage_flags | p->stage_delay) == 0)
+				goto settled;				/* 9076-9079 */
+			pb[3]++;
 settled:
-		if (p->count < g_sprite_frame_count)
-			goto tail;
-		p->count = (uint8)(p->count - g_sprite_frame_count);
-		if (p->stage_delay != 0) {
-			p->stage_delay--;
-			goto tail;
+			if (pb[3] < g_sprite_frame_count)
+				goto tail;
+			pb[3] = (uint8)(pb[3] - g_sprite_frame_count);
+			if (pb[5] != 0) {
+				pb[5]--;				/* 9095 */
+				goto tail;
+			}
+			if (pb[7] == 0) {
+				pb[1] = 0;				/* 90C9-90CC */
+				goto tail;
+			}
+			pb[1] = pb[6];					/* 90A5-90A8 */
+			pb[6] = 0;					/* 90AE */
+			pb[5] = pb[7];					/* 90B7-90BA */
+			pb[7] = 0;					/* 90C0 */
 		}
-		if (p->stage_flags == 0) {
-			p->stride_index = 0;
-			goto tail;
-		}
-		p->stride_index = (uint8)p->stage_next;		p->stage_next = 0;					/* 90A5-90AE */
-		p->stage_delay = p->stage_flags;		p->stage_flags = 0;					/* 90B7-90C0 */
-		return 0;
+		goto tail;
 
 	case NODE_TYPE_MISSILE - 1:
+#ifdef SS_SDL
+		p = SPRITE_REC(node->data);
+#else
 		p = SPRITE_REC((uint16)node->data);
+#endif
 		g_sprite_draw_x = (uint16)p->x + (uint16)p->y;	/* 90F8-90FE */
 		g_sprite_draw_y = (int16)((int16)(int16)(uint16)p->y >> 1)
 		           - (int16)((int16)(int16)(uint16)p->x >> 1)
@@ -451,7 +556,11 @@ int16 find_party_player_tile(int16 idx)
 
 void free_list_reset(void)
 {
+#ifdef SS_SDL
+	struct node_rec *p = &ss_free_pool[0];
+#else
 	struct node_rec *p = NODE(g_free_head);
+#endif
 
 	p->key = LIST_KEY_NONE;
 	p->type = 0;
@@ -573,43 +682,76 @@ int16 record_direction(struct actor_rec *w)
 
 /* 0x2084 */
 
-void apply_rect_action(int16 kind, int16 *act)
+/* Apply the use effect of an inventory item to a character.  `kind` is the
+   character/class id from the hero slot, and `act` points at the item's site
+   record: the low byte of its id is the ACTION_* code (also the item icon).
+   The function equips weapons, loads ammunition, arms the spellcasters'
+   prepared spells, and consumes food/healing items. */
+void apply_character_action(int16 kind, int16 *act)
 {
 	struct character_rec *rec = CHAR_REC(character_at(g_record_addr[kind]));	/* 208B-2094 */
 	int16 op = *act;						/* 2097-209C */
 	int16 i;
 
+#ifdef SS_SDL
+	/* A weapon unequipped by the port carries its icon in the low byte and
+	   the slot direction in the high byte.  Restore it directly: the
+	   original item actions cannot describe every icon (spear item 3 raises
+	   icon 9, and bow item 9 raises icon 3, so the item id and equipped icon
+	   differ).  The previous weapon takes this item's place in the backpack,
+	   keeping the marker. */
+	{
+		struct site_rec *item = (struct site_rec *)act;
+		uint16 marker = (uint16)(item->id & SS_ITEM_MARKER_MASK);
+
+		if (marker != 0 && (uint8)op != 0) {
+			uint8 icon = (uint8)op;
+
+			if ((marker & SS_ITEM_RANGED_MARKER) != 0) {
+				*act = (int16)rec->ranged_weapon.icon;
+				rec->ranged_weapon.icon = icon;
+			} else {
+				*act = (int16)rec->hand_weapon.icon;
+				rec->hand_weapon.icon = icon;
+			}
+			if (*act != 0)
+				*act = (int16)((uint16)*act | marker);
+			return;
+		}
+	}
+#endif
+
 	switch ((uint8)op - ACTION_OP_BASE) {				/* 209F-2489 */
-	case ACTION_CASE(ACTION_SET_WEAPON_MODE_9):
+	case ACTION_CASE(ACTION_USE_SPEAR):	/* inventory spear item */
 		if (rec->ranged_weapon.icon == 0 && kind != CHAR_STURM && kind != CHAR_FLINT &&
 		    kind != CHAR_CARAMON && kind != CHAR_GOLMOON && kind != CHAR_ELISTAN) {
 			rec->ranged_weapon.icon = RANGED_WEAPON_SPEAR;
 			*act = 0;
 		}
 		break;
-	case ACTION_CASE(ACTION_SET_SPRITE_04): case ACTION_CASE(ACTION_SET_SPRITE_05): case ACTION_CASE(ACTION_SET_SPRITE_08): case ACTION_CASE(ACTION_SET_SPRITE_0A): case ACTION_CASE(ACTION_SET_SPRITE_0C): case ACTION_CASE(ACTION_SET_SPRITE_13):
+	case ACTION_CASE(ACTION_EQUIP_LONGSWORD): case ACTION_CASE(ACTION_EQUIP_CLUB): case ACTION_CASE(ACTION_EQUIP_TWO_HANDED_SWORD): case ACTION_CASE(ACTION_EQUIP_LONGSWORD_PLUS1): case ACTION_CASE(ACTION_EQUIP_LONGSWORD_PLUS2): case ACTION_CASE(ACTION_EQUIP_WYRMSLAYER):
 		if (kind != CHAR_GOLMOON && kind != CHAR_FLINT && kind != CHAR_TASSLEHOFF && kind != CHAR_RAISTLIN) {
 			*act = (int16)rec->hand_weapon.icon;			/* 2134-213D */
 			rec->hand_weapon.icon = (uint8)op;				/* 213F-2145 */
 		}
 		break;
-	case ACTION_CASE(ACTION_SET_WEAPON_MODE_3):
+	case ACTION_CASE(ACTION_USE_BOW):	/* inventory bow item */
 		if (rec->ranged_weapon.icon == 0 && kind != CHAR_STURM && kind != CHAR_GOLMOON && kind != CHAR_ELISTAN) {
 			rec->ranged_weapon.icon = RANGED_WEAPON_BOW;
 			*act = 0;
 		}
 		break;
-	case ACTION_CASE(ACTION_DROP_IF_FLINT_0B): case ACTION_CASE(ACTION_DROP_IF_FLINT_12):
+	case ACTION_CASE(ACTION_FLINT_EQUIP_HAND_AXE): case ACTION_CASE(ACTION_FLINT_EQUIP_THROWING_AXE):
 		if (kind == CHAR_FLINT) {
 			*act = (int16)rec->hand_weapon.icon;			/* 2154-215D */
 			rec->hand_weapon.icon = (uint8)op;				/* 215F-2165 */
 		}
 		break;
-	case ACTION_CASE(ACTION_PAIR_IF_MODE3_0E): case ACTION_CASE(ACTION_PAIR_IF_MODE3_0F):
+	case ACTION_CASE(ACTION_LOAD_BOW_ARROWS): case ACTION_CASE(ACTION_LOAD_BOW_ARROWS_PLUS2):
 		if ((WEAPON_WORD(rec->ranged_weapon) & LOW15_MASK) == RANGED_WEAPON_BOW)	/* 216E-2177 */
 			goto pair_done;
 		break;
-	case ACTION_CASE(ACTION_PAIR_IF_MODE6_10):
+	case ACTION_CASE(ACTION_LOAD_HOOPAK_STONES):
 		if ((WEAPON_WORD(rec->ranged_weapon) & LOW15_MASK) != RANGED_WEAPON_HOOPAK)	/* 2181-218A */
 			break;
 pair_done:
@@ -619,7 +761,7 @@ pair_done:
 		rec->action_timer = (uint8)(op >> 8); /* 21AB-21B1 */
 		WEAPON_WORD(rec->ranged_weapon) &= 0x7fff;			/* 21B4-21B7 */
 		break;
-	case ACTION_CASE(ACTION_GOLMOON_FIREBALL):
+	case ACTION_CASE(ACTION_GOLMOON_ARM_FIREBALL):
 		if (kind != CHAR_GOLMOON) {
 			(void)message_box(MSG_BOX_NOTICE, MSG_GOLMOON_ONLY);
 			break;
@@ -628,7 +770,7 @@ pair_done:
 		show_text_panel(TEXT_FIREBALL_READY);						/* 21DC-21E3 */
 		g_spell_purge_pending = 2;
 		break;
-	case ACTION_CASE(ACTION_GOLMOON_SELECT):
+	case ACTION_CASE(ACTION_GOLMOON_SELECT_TARGET):
 		if (kind != CHAR_GOLMOON) {
 			(void)message_box(MSG_BOX_NOTICE, MSG_GOLMOON_ONLY);
 			break;
@@ -638,14 +780,14 @@ pair_done:
 
 		hero_slot_select(HERO_SLOT_SELECT_MISSING_ARG);
 		break;
-	case ACTION_CASE(ACTION_GOLMOON_CANCEL):
+	case ACTION_CASE(ACTION_GOLMOON_CANCEL_SPELL):
 		if (kind != CHAR_GOLMOON) {
 			(void)message_box(MSG_BOX_NOTICE, MSG_GOLMOON_ONLY);
 			break;
 		}
 		*act = 0;						/* 222A-222D */
 		break;
-	case ACTION_CASE(ACTION_RAISTLIN_SPELL_7):
+	case ACTION_CASE(ACTION_RAISTLIN_ARM_FIREBALL):
 		if (kind != CHAR_RAISTLIN) {
 			(void)message_box(MSG_BOX_NOTICE, MSG_RAISTLIN_ONLY);
 			break;
@@ -654,7 +796,7 @@ pair_done:
 		g_raistlin_menu_choice = SPELL_FIREBALL;
 		show_text_panel(TEXT_FIREBALL_READY);						/* 225B-2262 */
 		break;
-	case ACTION_CASE(ACTION_RAISTLIN_SPELL_3):
+	case ACTION_CASE(ACTION_RAISTLIN_ARM_CHARM):
 		if (kind != CHAR_RAISTLIN) {
 			show_text_panel(TEXT_ONLY_MAGIC_USER);
 			break;
@@ -663,7 +805,7 @@ pair_done:
 		g_raistlin_menu_choice = SPELL_CHARM;
 		show_text_panel(TEXT_FIREBALL_READY);						/* 2288-228F */
 		break;
-	case ACTION_CASE(ACTION_RAISTLIN_SPELL_2):
+	case ACTION_CASE(ACTION_RAISTLIN_ARM_DETECT_MAGIC):
 		if (kind != CHAR_RAISTLIN) {
 			show_text_panel(TEXT_ONLY_MAGIC_USER);
 			break;
@@ -672,7 +814,7 @@ pair_done:
 		g_raistlin_menu_choice = SPELL_DETECT_MAGIC;
 		show_text_panel(TEXT_FIREBALL_READY);						/* 22B8-22BF */
 		break;
-	case ACTION_CASE(ACTION_RAISTLIN_SPELL_11):
+	case ACTION_CASE(ACTION_RAISTLIN_ARM_SPECIAL):
 		if (kind != CHAR_RAISTLIN) {
 			(void)message_box(MSG_BOX_NOTICE, MSG_RAISTLIN_ONLY);
 			break;
@@ -683,10 +825,10 @@ pair_done:
 			op = 0;
 		*act = op;						/* 22EE-22F4 */
 		break;
-	case ACTION_CASE(ACTION_ADD_RANDOM_8):
+	case ACTION_CASE(ACTION_HEAL_LIGHT):
 		rec->hp = (uint16)((int16)rec->hp + rnd(8) + 1);				/* 23E7-23F1 */
 		goto clamp_done;
-	case ACTION_CASE(ACTION_DRAGON_TRANSFORM):
+	case ACTION_CASE(ACTION_START_DRAGON_SCENE):
 		if ((uint8)g_map_mode_char != MAP_SCENE_DRAGON_AFTERMATH) {
 			(void)event_raise(EVENT_TRANSFORM_WRONG_MAP);				/* 23D6-23DD */
 			break;
@@ -728,7 +870,7 @@ pair_done:
 		(void)shadow_video_page(SHADOW_PAGE_DEFAULT);					/* 23C4-23CA */
 		*act = 0;						/* 23CD-23D0 */
 		break;
-	case ACTION_CASE(ACTION_ADD_RANDOM_21):
+	case ACTION_CASE(ACTION_EAT_FOOD):
 		rec->hp = (uint16)((int16)rec->hp + rnd(21) + 6);			/* 23F9-2406 */
 clamp_done:
 		if ((int16)rec->hp_max < (int16)rec->hp)		/* 240C-2416 */
@@ -737,48 +879,48 @@ clamp_done:
 		(void)event_raise(EVENT_HP_CHANGED);					/* 2420-2427 */
 		(void)draw_hero_gauges();
 		break;
-	case ACTION_CASE(ACTION_LEVEL_DOWN_1):
+	case ACTION_CASE(ACTION_LEVEL_DRAIN_1):
 		rec->stats.armor_class = (int8)(rec->stats.armor_class - 1);
 		goto edge_tail;
-	case ACTION_CASE(ACTION_LEVEL_DOWN_2):
+	case ACTION_CASE(ACTION_LEVEL_DRAIN_2):
 		rec->stats.armor_class = (int8)(rec->stats.armor_class - 2);
 edge_tail:
 		(void)event_raise(EVENT_LEVEL_DRAINED);					/* 243F-2446 */
 		*act = 0;						/* 2449-244C */
 		break;
-	case ACTION_CASE(ACTION_RESET_LEVEL):
+	case ACTION_CASE(ACTION_RESTORE_DRAINED_LEVELS):
 		if (((int16)(int8)rec->base_stats.armor_class - 8) !=
 		    (int16)(int8)rec->stats.armor_class) {	/* 2456-2465 */
 			rec->stats.armor_class = (int8)(rec->base_stats.armor_class - 8);
 			*act = 0;					/* 2471-2474 */
 		}
 		break;
-	case ACTION_CASE(ACTION_IGNORED_06):
-	case ACTION_CASE(ACTION_IGNORED_07):
-	case ACTION_CASE(ACTION_IGNORED_0D):
-	case ACTION_CASE(ACTION_IGNORED_11):
-	case ACTION_CASE(ACTION_IGNORED_17):
-	case ACTION_CASE(ACTION_IGNORED_18):
-	case ACTION_CASE(ACTION_IGNORED_1B):
-	case ACTION_CASE(ACTION_IGNORED_1E):
-	case ACTION_CASE(ACTION_IGNORED_1F):
-	case ACTION_CASE(ACTION_IGNORED_20):
-	case ACTION_CASE(ACTION_IGNORED_21):
-	case ACTION_CASE(ACTION_IGNORED_22):
-	case ACTION_CASE(ACTION_IGNORED_23):
-	case ACTION_CASE(ACTION_IGNORED_24):
-	case ACTION_CASE(ACTION_IGNORED_25):
-	case ACTION_CASE(ACTION_IGNORED_26):
-	case ACTION_CASE(ACTION_IGNORED_29):
-	case ACTION_CASE(ACTION_IGNORED_2A):
-	case ACTION_CASE(ACTION_IGNORED_2B):
-	case ACTION_CASE(ACTION_IGNORED_2C):
-	case ACTION_CASE(ACTION_IGNORED_2D):
-	case ACTION_CASE(ACTION_IGNORED_2E):
-	case ACTION_CASE(ACTION_IGNORED_2F):
-	case ACTION_CASE(ACTION_IGNORED_30):
-	case ACTION_CASE(ACTION_IGNORED_31):
-	case ACTION_CASE(ACTION_IGNORED_32):
+	case ACTION_CASE(ACTION_NO_EFFECT_06):
+	case ACTION_CASE(ACTION_NO_EFFECT_07):
+	case ACTION_CASE(ACTION_NO_EFFECT_0D):
+	case ACTION_CASE(ACTION_NO_EFFECT_11):
+	case ACTION_CASE(ACTION_NO_EFFECT_17):
+	case ACTION_CASE(ACTION_NO_EFFECT_18):
+	case ACTION_CASE(ACTION_NO_EFFECT_1B):
+	case ACTION_CASE(ACTION_NO_EFFECT_1E):
+	case ACTION_CASE(ACTION_NO_EFFECT_1F):
+	case ACTION_CASE(ACTION_NO_EFFECT_20):
+	case ACTION_CASE(ACTION_NO_EFFECT_21):
+	case ACTION_CASE(ACTION_NO_EFFECT_22):
+	case ACTION_CASE(ACTION_NO_EFFECT_23):
+	case ACTION_CASE(ACTION_NO_EFFECT_24):
+	case ACTION_CASE(ACTION_NO_EFFECT_25):
+	case ACTION_CASE(ACTION_NO_EFFECT_26):
+	case ACTION_CASE(ACTION_NO_EFFECT_29):
+	case ACTION_CASE(ACTION_NO_EFFECT_2A):
+	case ACTION_CASE(ACTION_NO_EFFECT_2B):
+	case ACTION_CASE(ACTION_NO_EFFECT_2C):
+	case ACTION_CASE(ACTION_NO_EFFECT_2D):
+	case ACTION_CASE(ACTION_NO_EFFECT_2E):
+	case ACTION_CASE(ACTION_NO_EFFECT_2F):
+	case ACTION_CASE(ACTION_NO_EFFECT_30):
+	case ACTION_CASE(ACTION_NO_EFFECT_31):
+	case ACTION_CASE(ACTION_NO_EFFECT_32):
 	default:
 		break;
 	}
@@ -943,6 +1085,13 @@ extern char g_play_mode;						/* 0x9E0C */
 #include "structs.h"
 
 /* 0x33F6 */
+#ifdef SS_SDL
+/* Set when an actor crosses a valid site exit.  The exit's map value can be
+   0 (return to the overland map), which is otherwise indistinguishable from
+   "no pending terrain" in the main loop. */
+uint16 g_site_exit_pending;
+#endif
+
 void record_move_dispatch(struct actor_rec *actor)
 {
 	uint8 *p;
@@ -956,6 +1105,11 @@ void record_move_dispatch(struct actor_rec *actor)
 	actor_try_step(actor);
 	actor->x = (int16)((int16)actor->x + (int16)actor->vel_x);
 	actor->y = (int16)((int16)actor->y + (int16)actor->vel_y);
+#ifdef SS_SDL
+	if (actor >= &g_actor_table[0] && actor <= &g_actor_table[3] &&
+	    (actor->vel_x | actor->vel_y) != 0)
+		ss_sfx_step();
+#endif
 
 	if ((int16)(int8)actor->state > 4 && snap != 0 &&
 	    (actor->vel_x | actor->vel_y) == 0) {	/* 3431-3448 */
@@ -984,6 +1138,11 @@ void record_move_dispatch(struct actor_rec *actor)
 						actor->direction = (uint8)(actor->direction & 0xfc);
 				} else {
 					g_pending_terrain = (int16)(int8)g_map_working.exit_left_map;
+#ifdef SS_SDL
+					if ((int16)(int8)actor->state >= 1 &&
+					    (int16)(int8)actor->state <= 4)
+						g_site_exit_pending = 1;
+#endif
 					g_window_stamp = (int16)(int8)actor->direction;
 					g_pane_base_x = 8;
 					g_pane_base_y = (int16)actor->y >> 4;
@@ -1001,6 +1160,11 @@ void record_move_dispatch(struct actor_rec *actor)
 						actor->direction = (uint8)(actor->direction & 0xfc);
 				} else {
 					g_pending_terrain = (int16)(int8)g_map_working.exit_right_map;
+#ifdef SS_SDL
+					if ((int16)(int8)actor->state >= 1 &&
+					    (int16)(int8)actor->state <= 4)
+						g_site_exit_pending = 1;
+#endif
 					g_window_stamp = (int16)(int8)actor->direction;
 					g_pane_base_x = 0;
 					g_pane_base_y = (int16)actor->y >> 4;
@@ -1021,6 +1185,11 @@ void record_move_dispatch(struct actor_rec *actor)
 					}
 				} else {
 					g_pending_terrain = (int16)(int8)g_map_working.exit_top_map;
+#ifdef SS_SDL
+					if ((int16)(int8)actor->state >= 1 &&
+					    (int16)(int8)actor->state <= 4)
+						g_site_exit_pending = 1;
+#endif
 					g_window_stamp = (int16)(int8)actor->direction;
 					g_pane_base_x = (int16)actor->x >> 4;
 					g_pane_base_y = 8;
@@ -1040,6 +1209,11 @@ void record_move_dispatch(struct actor_rec *actor)
 					}
 				} else {
 					g_pending_terrain = (int16)(int8)g_map_working.exit_bottom_map;
+#ifdef SS_SDL
+					if ((int16)(int8)actor->state >= 1 &&
+					    (int16)(int8)actor->state <= 4)
+						g_site_exit_pending = 1;
+#endif
 					g_window_stamp = (int16)(int8)actor->direction;
 					g_pane_base_x = (int16)actor->x >> 4;
 					g_pane_base_y = 0;
@@ -1480,7 +1654,7 @@ int16 effect_publish(int16 kind, int16 map_lo, int16 countdown, int16 x, int16 y
 
 		countdown = 5;
 
-	sound_request_max((int16)g_tick_by_kind[kind]);
+	sound_request_or_effect((int16)kind, (int16)g_tick_by_kind[kind]);
 
 	for (i = 0, p = g_effect_table; i != EFFECT_COUNT; i++, p++) {	/* BE1F-BE31 */
 		if (p->id != 0)
@@ -1576,6 +1750,54 @@ union vote_data g_vote_data = { {
 
 /* 0xC5EC */
 
+/* Some creatures are neutral until the player explicitly attacks them.  The
+   kind-22 guardian is the dwarven hall guardian: attacking it is what triggers
+   the "dwarves are hostile" event.  Heroes under computer control must not
+   pick these targets unless the player has provoked them. */
+uint8 g_actor_provoked[ACTOR_COUNT];
+
+/* The Aurak hides itself while it is chasing the party; Detect Invisible
+   reveals it, and Dispel Magic ends the effect.  Keep this in one place so
+   the draw path and the description panel agree. */
+int16 actor_is_invisible(struct actor_rec *a)
+{
+	if (a == 0 || a->state == 0)
+		return 0;
+	if (a->state == ACTOR_KIND_AURAK && a->mode == ACTOR_MODE_CHASE
+	    && g_detect_invisible_ticks == 0)
+		return 1;
+	return 0;
+}
+
+int16 actor_is_neutral(struct actor_rec *a)
+{
+	int16 kind;
+	int16 idx = (int16)(a - g_actor_table);
+
+	if (a->state == 0)
+		return 0;
+	if (idx >= 0 && idx < ACTOR_COUNT && g_actor_provoked[idx] != 0)
+		return 0;
+	kind = (int16)(int8)a->state;
+	if (kind == ACTOR_KIND_DWARVES)
+		return 1;
+	if (kind == ACTOR_KIND_DEATH_KNIGHT && g_game_state.map_event_done == 0)
+		return 1;
+	return 0;
+}
+
+void actor_provoke(int16 idx)
+{
+	if (idx >= 0 && idx < ACTOR_COUNT)
+		g_actor_provoked[idx] = 1;
+}
+
+void actor_clear_provoke(int16 idx)
+{
+	if (idx >= 0 && idx < ACTOR_COUNT)
+		g_actor_provoked[idx] = 0;
+}
+
 void character_attack_actor(struct actor_rec *target, int16 character)
 {
 	struct character_rec *attacker;
@@ -1588,6 +1810,9 @@ void character_attack_actor(struct actor_rec *target, int16 character)
 
 	amt = (int16)attacker->level;				/* C612-C618 */
 	kind = (int16)(int8)target->state;			/* C61B-C621 */
+
+	if (actor_is_neutral(target))
+		actor_provoke((int16)(target - g_actor_table));
 
 	if (kind == ACTOR_KIND_DEATH_KNIGHT && g_game_state.map_event_done == 0) {	/* C624-C630 */
 		g_game_state.map_event_done = 1;
@@ -1630,7 +1855,7 @@ void character_attack_actor(struct actor_rec *target, int16 character)
 		    + (int16)pr->bonus;				/* C778-C791 */
 	}
 
-	sound_request_max(SOUND_REQUEST_DAMAGE);							/* C794-C79B */
+	sound_request_damage();							/* C794-C79B */
 	amt += (int16)g_roll_table.damage_modifier[(int16)(int8)attacker->stats.attributes[ATTR_STR]];		/* C79E-C7AC */
 
 	if ((int16)WEAPON_WORD(attacker->hand_weapon) == WEAPON_WYRMSLAYER	/* C7AF-C7C4 */
@@ -1653,6 +1878,9 @@ void character_attack_actor(struct actor_rec *target, int16 character)
 
 	target->mode = ACTOR_MODE_RETIRED;							/* C7F9-C803 */
 	target->status = 0;
+#ifdef SS_SDL
+	(void)ss_sfx_play(SS_SFX_DEATH);
+#endif
 	if (kind == ACTOR_KIND_DWARVES)						/* C804-C80A */
 		load_current_map();
 
@@ -1692,12 +1920,12 @@ int16 effect_step_kind(struct effect_rec *rec)
 	state = 1;
 	b3 = 4;
 
-	if (kind == EFFECT_KIND_RECOVER_WEAPON_17 || kind == EFFECT_KIND_RECOVER_WEAPON_9) {				/* C077-C081 */
+	if (kind == EFFECT_KIND_RECOVER_THROWING_AXE || kind == EFFECT_KIND_RECOVER_SPEAR) {				/* C077-C081 */
 		state = EFFECT_KIND_INERT;
 		b3 = 1;
 		x = (int16)o->x - (int16)o->dx;	/* C08D-C096 */
 		y = (int16)o->y - (int16)o->dy;	/* C099-C09F */
-		n = (kind == EFFECT_KIND_RECOVER_WEAPON_17) ? WEAPON_RECORD_17 : WEAPON_RECORD_9;				/* C0A2-C0B0 */
+		n = (kind == EFFECT_KIND_RECOVER_THROWING_AXE) ? WEAPON_RECORD_THROWING_AXE : WEAPON_RECORD_SPEAR;				/* C0A2-C0B0 */
 		probe_record_kind(n, x, y, 0, PROBE_MASK_VISIBLE);				/* C0B3-C0C6 */
 	}
 
@@ -1746,7 +1974,7 @@ int16 effect_step_kind(struct effect_rec *rec)
 		}
 
 		map_record_show((int16)(int8)g_map_mode_char, 0);	/* C237-C242 */
-	} else if (kind == EFFECT_KIND_DEACTIVATE_6 || kind == EFFECT_KIND_DEACTIVATE_7 || kind == EFFECT_KIND_DEACTIVATE_8 || kind == EFFECT_KIND_DEACTIVATE_15) {
+	} else if (kind == EFFECT_KIND_CLEAR_ARROWS || kind == EFFECT_KIND_CLEAR_ARROWS_PLUS2 || kind == EFFECT_KIND_CLEAR_STONES || kind == EFFECT_KIND_CLEAR_HIT) {
 		state = EFFECT_KIND_INERT;						/* C247-C25D */
 		b3 = 1;								/* C25F-C264 */
 	}
@@ -1754,7 +1982,8 @@ int16 effect_step_kind(struct effect_rec *rec)
 	EFFECT_KIND(o) = (uint8)state;				/* C269-C26F */
 	o->countdown = (uint8)b3;					/* C271-C277 */
 
-	sound_request_max((int16)g_tick_by_kind[(int16)(int8)EFFECT_KIND(o)]);	/* C27A-C28B */
+	sound_request_or_effect((int16)(int8)EFFECT_KIND(o),
+	                        (int16)g_tick_by_kind[(int16)(int8)EFFECT_KIND(o)]);	/* C27A-C28B */
 
 	EFFECT_ID_HI(o) = 0;
 	o->dx = 0;
@@ -1869,7 +2098,7 @@ void actor_take_action(int16 idx, struct actor_rec *rec)
 
 	if (tgt->orders & 4) {									/* 3E44-3E4A */
 		if (((int16)tgt->hp_max >> 2) > (int16)tgt->hp) {	/* 3E4C-3E56 */
-			target->motion_state = ACTOR_MOTION_WANDER;							/* 3E58-3E5F */
+			rec->motion_state = ACTOR_MOTION_WANDER;						/* 3E58-3E5F */
 			return;
 		}
 	}
@@ -1886,13 +2115,16 @@ void actor_take_action(int16 idx, struct actor_rec *rec)
 				if (j != 0) {
 					g_cursor_tile_x = (int16)target->x >> 4;	/* 3EE0-3EEA */
 					g_cursor_tile_y = (int16)target->y >> 4;	/* 3EEB-3EF2 */
+#ifdef SS_SDL
+					g_aim_actor = qi;
+#endif
 					hero_window_point_draw(idx, j);				/* 3EF5-3EFE */
-					target->action_timer = 0;
-					target->action_phase = (uint8)(rnd(10) + 0xf);	/* 3F08-3F17 */
+					rec->action_timer = 0;
+					rec->action_phase = (uint8)(rnd(10) + 0xf);	/* 3F08-3F17 */
 					return;
 				}
 			} else if ((tgt->orders & 1) == 0) {					/* 3F1F-3F26 */
-				target->motion_state = ACTOR_MOTION_WANDER;
+				rec->motion_state = ACTOR_MOTION_WANDER;
 				return;
 			}
 		}
@@ -1911,21 +2143,25 @@ void actor_take_action(int16 idx, struct actor_rec *rec)
 			g_cursor_tile_y = (int16)target->y >> 4;				/* 3FAF-3FB4 */
 			if (d2 > SPELL_RANGE_SQ) {							/* 3FB7-3FBC */
 				j = spell_spend_charge(idx);					/* 3FBE-3FC7 */
-				if (j != 0)
+				if (j != 0) {
+#ifdef SS_SDL
+					g_aim_actor = qi;
+#endif
 					hero_window_point_draw(idx, j);				/* 3FCE-3FD5 */
-				target->action_timer = 0;
-				target->action_phase = (uint8)(ROLL_D20() + 30);	/* 3FDF-3FEE */
+				}
+				rec->action_timer = 0;
+				rec->action_phase = (uint8)(ROLL_D20() + 30);	/* 3FDF-3FEE */
 				return;
 			}
 			if ((tgt->orders & 1) == 0) {						/* 3FF5-3FFC */
-				target->motion_state = ACTOR_MOTION_WANDER;
+				rec->motion_state = ACTOR_MOTION_WANDER;
 				return;
 			}
 		}
 	}
 
 	if (tgt->orders & 1)									/* 4007-400E */
-		target->motion_state = ACTOR_MOTION_SEEK;
+		rec->motion_state = ACTOR_MOTION_SEEK;
 }
 
 /* 0xC2B2 */
@@ -1935,17 +2171,20 @@ int16 record_disturb_quads(struct effect_rec *rec)
 	struct effect_rec *o = rec;
 	int16 kind = (int16)(int8)EFFECT_KIND(o);		/* C2B8-C2BB */
 	int16 x0, x1, y0, y1, i, v;
+	int16 half;
 
 	if (kind < 4)								/* C2BB-C2C2 */
 		return 0;
 
-	x0 = (int16)o->x - 8;						/* C2C5-C2CB */
-	x1 = (int16)o->x + 8;						/* C2CE-C2D4 */
-	y0 = (int16)o->y - 8;						/* C2D7-C2DD */
-	y1 = (int16)o->y + 8;						/* C2E0-C2E6 */
+	half = 8;
+
+	x0 = (int16)o->x - half;						/* C2C5-C2CB */
+	x1 = (int16)o->x + half;						/* C2CE-C2D4 */
+	y0 = (int16)o->y - half;						/* C2D7-C2DD */
+	y1 = (int16)o->y + half;						/* C2E0-C2E6 */
 	v = (int16)o->z;
 
-	if (kind < 0x14) {							/* C2EF-C2F4 */
+	if (kind < EFFECT_KIND_HERO_HIT_BASE) {							/* C2EF-C2F4 */
 		for (i = ACTOR_HERO_COUNT; i != ACTOR_COUNT; ++i) {
 			struct actor_rec *row = ACTOR_AT(i);
 			if (row->state == 0)						/* C313-C319 */
@@ -2033,6 +2272,9 @@ int16 record_disturb_quads(struct effect_rec *rec)
 			v = (int16)(uint8)v + rnd(v >> 8);			/* C53A-C54C */
 			if (kind == EFFECT_KIND_LARGE_EFFECT && row->timer != 0)		/* C54F-C55E */
 				v = (30 * v) / 100;					/* C560-C56B */
+#ifdef SS_SDL
+			v = (int16)ss_scale_monster_damage((int)v);
+#endif
 			hero_member_damage(i, v);							/* C56E-C577 */
 			effect_step_kind(rec);							/* C57A-C580 */
 		}
@@ -2106,7 +2348,10 @@ int16 effect_tick_all(void)
 		if (kind == 0)
 			continue;
 
-		if (g_spell_purge_pending != 0 && g_tick_by_kind[kind + 52] == 0x14) {
+		/* g_tick_by_kind's second half (offset +52) is the per-effect
+		   "Dispel Magic can purge this" flag.  The decompiled 0x14
+		   comparison never matches the shipped 0/1 table. */
+		if (g_spell_purge_pending != 0 && g_tick_by_kind[kind + 52] == 1) {
 			if (ROLL_D100() < 50) {
 				rec->countdown = 0;
 				rec->id = 0;
@@ -2119,28 +2364,28 @@ int16 effect_tick_all(void)
 			if ((dx | dy | rec->dz) != 0 && kind > 3) {
 				bx = (int16)(int16)(uint16)rec->y >> 4;
 				ax = (int16)(int16)(uint16)rec->x >> 4;
-				bx = bx * 5 + ax;
+				bx = bx * 10 + ax;
 				if (g_map_working.grid[bx].cell.value != 4 &&
 				    tile_property(rec->x, rec->y) == 1)
 					effect_step_kind(rec);
 			}
 		} else {
-			if (rec->id == EFFECT_KIND_RECOVER_WEAPON_17
-			 || rec->id == EFFECT_KIND_RECOVER_WEAPON_9
-			 || rec->id == EFFECT_KIND_LARGE_EFFECT
-			 || rec->id == SPELL_EFFECT_FIREBALL)
+			if (kind == EFFECT_KIND_RECOVER_THROWING_AXE
+			 || kind == EFFECT_KIND_RECOVER_SPEAR
+			 || kind == EFFECT_KIND_LARGE_EFFECT
+			 || kind == SPELL_EFFECT_FIREBALL)
 				effect_step_kind(rec);
 			rec->id = 0;
 			continue;
 		}
 
 		(void)free_list_insert(1, 0xa0 - (int16)rec->x,
-		               (int16)rec->y, 5, (int16)rec, 0, 0);
+		               (int16)rec->y, 5, FREE_DATA(rec), 0, 0);
 		(void)record_disturb_quads(rec);
 
-		if (kind != EFFECT_KIND_RECOVER_WEAPON_9
-		 && kind != EFFECT_KIND_DEACTIVATE_6
-		 && kind != EFFECT_KIND_DEACTIVATE_7
+		if (kind != EFFECT_KIND_RECOVER_SPEAR
+		 && kind != EFFECT_KIND_CLEAR_ARROWS
+		 && kind != EFFECT_KIND_CLEAR_ARROWS_PLUS2
 		 && kind != EFFECT_KIND_HIT_DEFAULT)
 			EFFECT_ID_HI(rec)++;
 
@@ -2155,11 +2400,23 @@ int16 effect_tick_all(void)
 		    (int16)rec->y < 0 || (int16)rec->y > 0xa0) {
 			rec->x = (int16)(rec->x - dx);
 			rec->y = (int16)(rec->y - dy);
-			if (rec->id == EFFECT_KIND_RECOVER_WEAPON_17
-			 || rec->id == EFFECT_KIND_RECOVER_WEAPON_9)
+			if ((int16)(int8)EFFECT_KIND(rec) == EFFECT_KIND_RECOVER_THROWING_AXE
+			 || (int16)(int8)EFFECT_KIND(rec) == EFFECT_KIND_RECOVER_SPEAR)
 				effect_step_kind(rec);
 			rec->countdown = 0;
 		}
+
+		/* The free-list node points at this record, so the projectile is
+		   drawn at the position it has after the step above, while the
+		   collision test ran at the position before it.  Test the new
+		   position too; otherwise a shot can be drawn across a moving
+		   monster without registering. */
+		if ((kind == EFFECT_KIND_CLEAR_ARROWS ||
+		     kind == EFFECT_KIND_CLEAR_ARROWS_PLUS2 ||
+		     kind == EFFECT_KIND_CLEAR_STONES ||
+		     kind == SPELL_EFFECT_MAGIC_MISSILE) &&
+		    (int16)(int8)EFFECT_KIND(rec) == kind)
+			(void)record_disturb_quads(rec);
 	}
 
 	g_spell_purge_pending = 0;
@@ -2284,7 +2541,7 @@ int16 actor_proximity_pass(struct actor_rec *rec, int16 idx)
 tail:
 	if (d2 < PROXIMITY_REACT && (int16)(int8)rec->mode == 1 && rec->status == ACTOR_STATUS_ACTIVE
 	    && rec->state != ACTOR_KIND_GHOST)
-		sound_request_max(SOUND_REQUEST_ATTACK);
+		sound_request_or_sample(SOUND_REQUEST_ATTACK);
 	if (rec->state == ACTOR_KIND_GDRAGON && (SITE_FLAG_LO(SITE_AT(SITE_SLOT_GREEN_DRAGON)) & 2) != 0) {
 		if (region_loaded((int16)(int16)SITE_AT(SITE_SLOT_GREEN_DRAGON)->map) != 0)
 			rec->mode = ACTOR_MODE_CHASE;
@@ -2310,7 +2567,6 @@ extern void record_tick_state(struct actor_rec *rec);
 extern void character_react_move(struct actor_rec *rec);
 extern int16 effect_publish(int16 kind, int16 a2, int16 a3, int16 a4, int16 a5, int16 a6,
 		    int16 a7, int16 a8, int16 a9, int16 a10);
-extern int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16 x, int16 data, int16 y);
 extern int16 actor_proximity_pass(struct actor_rec *rec, int16 idx);
 extern void draw_map_items(void);
 extern int16 abs_w(int16 v);
@@ -2335,6 +2591,48 @@ int16 actor_sweep(void)
 		g_detect_magic_ticks--;
 	if (g_screen_hold != 0)
 		g_screen_hold--;
+
+#ifdef SS_SDL
+	/* Combat mode.  The manual says: "PCs with Default Commands go directly
+	   to Computer Control once a Combat begins."  The release only lights a
+	   hero's control button when that hero is hit, so companions standing
+	   away from the attacker stay idle and never join the fight.  On the
+	   first frame a hostile actor is in the scene, switch every hero that has
+	   default orders to computer control.  The transition is one-shot: the
+	   player can still click a control button to take a hero back, and the
+	   next Combat will arm the defaults again. */
+	{
+		static int16 ss_combat_started;
+		int16 combat = 0;
+		int16 k;
+
+		for (k = 4; k != ACTOR_COUNT; k++) {
+			struct actor_rec *m = ACTOR_AT(k);
+
+			if (m->state >= 5 && m->mode != ACTOR_MODE_RETIRED
+			    && !actor_is_neutral(m)) {
+				combat = 1;
+				break;
+			}
+		}
+		if (combat == 0) {
+			ss_combat_started = 0;
+		} else if (ss_combat_started == 0) {
+			ss_combat_started = 1;
+			for (k = 0; k != 4; k++) {
+				struct actor_rec *h = ACTOR_AT(k);
+				int16 kind = (int16)(uint8)g_hero_slots[k].state;
+
+				if (h->state >= 1 && h->state <= 4
+				    && h->mode != ACTOR_MODE_RETIRED && kind < 23) {
+					p = character_at(g_record_addr[kind]);
+					if (p->orders != 0)
+						SLOT_RECT_FLAG(k) |= 0x80;
+				}
+			}
+		}
+	}
+#endif
 
 	xbase = 0x40;
 	rows = 0;
@@ -2368,6 +2666,9 @@ int16 actor_sweep(void)
 							if (hs->state == ACTOR_KIND_RDRAGON)
 								PARTY_REC(PARTY_FOLLOWER_LEADER)->kind = 0;
 							hs->mode = ACTOR_MODE_RETIRED;
+#ifdef SS_SDL
+							(void)ss_sfx_play(SS_SFX_DEATH);
+#endif
 						}
 						(void)effect_publish(EFFECT_KIND_CREATURE, 0, 4,
 							(int16)hs->x,
@@ -2477,10 +2778,10 @@ retire:
 			if (vy < 0) mask |= 1;
 			hs->direction = g_dir_code[mask];
 		}
-		if (hs->state == ACTOR_KIND_AURAK && hs->mode == 1 && g_detect_invisible_ticks == 0)
+		if (actor_is_invisible(hs))
 			goto next;
 		(void)free_list_insert(1, 0xa0 - (int16)hs->x,
-			(int16)hs->y, 3, (int16)hs, 0, 0);
+			(int16)hs->y, 3, FREE_DATA(hs), 0, 0);
 next:
 		if (g_game_end_flag != 0)
 			break;

@@ -8,6 +8,7 @@
 #include "ids.h"
 
 #include <dos.h>
+#include <time.h>
 #include "shadow.h"
 #include "structs.h"
 #include "game.h"
@@ -48,6 +49,13 @@ int16 startup_checks(void)
 	union REGS r;
 	uint16 i;
 
+#ifdef SS_SDL
+	g_rng_seed = (uint16)time(NULL);
+	g_disk_class = 1;
+	g_mem_next = SS_ARENA_START_PARA;
+	if (g_hw_config != HW_CONFIG_20)
+		(void)shadow_page_flip();
+#else
 	r.h.ah = 0x2C;
 	int86(0x21, &r, &r);
 	g_rng_seed = r.x.dx;
@@ -74,6 +82,7 @@ int16 startup_checks(void)
 	r.x.si = (uint16)&g_shadow_counters[0];
 	r.x.ax = 0xD;
 	int86(SHADOW_VECTOR, &r, &r);
+#endif
 
 	if (g_hw_config == HW_CONFIG_20) {
 		for (i = 0; i < 256; i++)

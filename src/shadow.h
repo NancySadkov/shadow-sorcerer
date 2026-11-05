@@ -6,6 +6,7 @@
 
 #include "names.h"
 #include "ids.h"
+#include "structs.h"
 #ifndef SHADOW_H
 #define SHADOW_H
 
@@ -63,15 +64,39 @@ int16 shadow_page_flip(void);
 int16 shadow_rect_fill(uint16 x, uint16 y, uint16 w, uint16 h);
 int16 shadow_getkey_noecho(void);
 int16 shadow_save(void);
+#ifdef SS_SDL
+int16 shadow_set_palette(const uint8 *table);
+#else
 int16 shadow_set_palette(uint16 palette_offset);
+#endif
 int16 shadow_text_draw(int16 attr, int16 col, int16 row, const char *text);
 int16 shadow_asset_load(char *name, uint16 paragraph);
 int16 shadow_stream_read(uint16 offset);
 int16 shadow_direction_read(void);
+#ifdef SS_SDL
+void shadow_sprite(int16 selector, int16 kind, int16 x, int16 y,
+                   const uint8 *src);
+#else
 void shadow_sprite(int16 selector, int16 kind, int16 x, int16 y,
                    int16 data_off, uint16 segment);
+#endif
 
+#ifdef SS_SDL
+void shadow_text(int16 colour, int16 col, int16 row, const char *str);
+#define SHADOW_TEXT_STR(p) ((const char *)(p))
+/* Restore a screen rectangle from page 7 (the saved static scene). */
+void ss_restore_static_rect(int16 x, int16 y, int16 w, int16 h);
+int16 ss_take_double_click(int16 button);
+/* Save/restore a rectangle of the static map page itself. */
+void ss_read_static_rect(uint8 *dst, int16 pitch,
+                         int16 x, int16 y, int16 w, int16 h);
+void ss_write_static_rect(const uint8 *src, int16 pitch,
+                          int16 sx, int16 sy,
+                          int16 x, int16 y, int16 w, int16 h);
+#else
 void shadow_text(int16 colour, int16 col, int16 row, uint16 str);
+#define SHADOW_TEXT_STR(p) ((uint16)(p))
+#endif
 
 #define TEXT_COLOUR_NORMAL	0xFF04
 #define TEXT_COLOUR_HIGHLIGHT	0xFF03

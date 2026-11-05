@@ -10,20 +10,30 @@
 #include <memory.h>
 
 #include "hw.h"
+#ifdef SS_SDL
+#include "ss_platform.h"
+#include <time.h>
+#endif
 
 extern void pit_stop(void);             /* 0xD0A4 */
 extern volatile uint16 g_pit_divisor;
 extern volatile uint16 g_disp_last;
-extern volatile void (*g_disp_handler)(void);
+extern void (*volatile g_disp_handler)(void);
 
 uint16 g_tick_prev_off;                          /* 0xCE84 */
 uint16 g_tick_prev_seg;                          /* 0xCE86 */
 
+#ifndef SS_SDL
 extern void interrupt far tick_handler(void);  /* 0xCF55 */
+#endif
 
 /* 0xD0DF */
 void install_tick_hook(void)
 {
+#ifdef SS_SDL
+	/* Nothing to hook: the audio callback clocks the PIT handlers. */
+	pit_stop();
+#else
 	void (interrupt far *ph)(void);
 	union REGS r;
 	struct SREGS s;
@@ -43,11 +53,13 @@ void install_tick_hook(void)
 	r.x.dx = FP_OFF(ph);
 	s.ds = FP_SEG(ph);
 	int86x(0x21, &r, &r, &s);
+#endif
 }
 
 uint16 g_tick_accum;                          /* 0xCE6A */
 static volatile uint16 g_tick_in_handler;     /* 0xCF53 */
 
+#ifndef SS_SDL
 /* 0xCF55 */
 void interrupt far tick_handler(void)
 {
@@ -78,10 +90,14 @@ void interrupt far tick_handler(void)
 
 	g_tick_in_handler = 0;
 }
+#endif
 
 /* 0xD108 */
 void tick_uninstall(void)
 {
+#ifdef SS_SDL
+	pit_stop();
+#else
 	union REGS r;
 	struct SREGS s;
 
@@ -92,4 +108,5 @@ void tick_uninstall(void)
 	r.x.dx = g_tick_prev_off;
 	s.ds = g_tick_prev_seg;
 	int86x(0x21, &r, &r, &s);
+#endif
 }

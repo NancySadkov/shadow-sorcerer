@@ -15,6 +15,9 @@
 #define SERVICE_FINISH		0x0b40
 
 #include "shadow.h"
+#ifdef SS_SDL
+#include "ss_music.h"
+#endif
 
 extern int16 g_hw_config;                     /* 0x9E14 */
 extern uint16 g_mem_next;                 /* 0xA9C8 */
@@ -91,6 +94,12 @@ uint16 g_drv_handle;
 /* 0xD1DC */
 int16 driver_play_sequence(int16 sequence)
 {
+#ifdef SS_SDL
+	/* No MIDI driver in the port; the Ogg music stings are selected by the
+	   original sequence ids. */
+	ss_music_play_sequence(sequence);
+	return 0;
+#else
 	union { void (far *fn)(void); struct { uint16 off, seg; } r; } open_drv;
 	union { int16 (far *fn)(int16, int16); struct { uint16 off, seg; } r; } open_it;
 	union { int32 (far *fn)(int16); struct { uint16 off, seg; } r; } name_it;
@@ -159,4 +168,5 @@ int16 driver_play_sequence(int16 sequence)
 	finish.r.seg = SERVICE_CS;  finish.r.off = SERVICE_FINISH;
 	rv = (uint16)finish.fn((int16)g_drv_handle);
 	return (int16)rv;
+#endif
 }

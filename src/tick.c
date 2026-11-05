@@ -24,13 +24,20 @@ volatile uint16 g_disp_flag;              /* 0xCE7C */
 volatile uint16 g_disp_state;             /* 0xCE76 */
 volatile uint16 g_disp_control;           /* 0xCE6E */
 volatile uint16 g_disp_clear;             /* 0xCE66 */
+#ifdef SS_SDL
+volatile const uint8 *g_disp_ptr;         /* 0xCE78 */
+volatile const uint8 *g_disp_ptr2;        /* 0xCE7A */
+#define G_DISP_SET(p) (g_disp_ptr = (const uint8 *)(p))
+#else
 volatile uint16 g_disp_ptr;               /* 0xCE78 */
 volatile uint16 g_disp_ptr2;              /* 0xCE7A */
+#define G_DISP_SET(p) (g_disp_ptr = (uint16)(p))
+#endif
 volatile uint16 g_noise_shift;            /* 0xCE68 */
 volatile uint16 g_noise_mask;             /* 0xCE70 */
 volatile uint16 g_noise_or;               /* 0xCE72 */
 volatile uint16 g_noise_period;           /* 0xCE74 */
-volatile void (*g_disp_handler)(void);      /* 0xCE82 */
+void (*volatile g_disp_handler)(void);      /* 0xCE82 */
 
 /* 0xD07F */
 
@@ -41,7 +48,7 @@ void tick_handler_type1(void)
 		(const struct tone_event *)(uint8 *)g_disp_ptr;
 	uint16 w = ev->divisor;
 
-	g_disp_ptr = (uint16)(ev + 1);
+	G_DISP_SET(ev + 1);
 
 	if (w == 0) {
 		pit_stop();
@@ -66,7 +73,7 @@ void tick_handler_type0(void)
 		g_noise_mask = ev->mask;
 		g_noise_or   = ev->or_value;
 		g_noise_period = ev->period;
-		g_disp_ptr = (uint16)(ev + 1);
+		G_DISP_SET(ev + 1);
 		ax = 0;
 	}
 
@@ -118,7 +125,7 @@ top:
 	outp(0x43, 0xB6);
 
 	ax = ev->frequency;
-	g_disp_ptr = (uint16)(ev + 1);
+	G_DISP_SET(ev + 1);
 
 	if (ax == 0) {
 		uint8 v = (uint8)(inp(0x61) & 0xFC);
@@ -132,3 +139,4 @@ top:
 		outp(0x61, (uint8)(inp(0x61) | 0x03));
 	}
 }
+

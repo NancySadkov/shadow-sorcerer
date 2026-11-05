@@ -7,13 +7,37 @@
 #include "names.h"
 #include "ids.h"
 
+#ifdef SS_SDL
+#include "ss_platform.h"
+#include "ss_ega.h"
+#else
 #include <dos.h>
+#endif
 #include <stdio.h>
 #include "shadow.h"
 #include "game.h"
 #include "structs.h"
 
 /* 0x1144 */
+
+#ifdef SS_SDL
+/* The port addresses sprite data with flat pointers; the DOS build keeps the
+   segment:offset pair.  These helpers hide the difference at each call. */
+#define SPRITE_DATA(desc) ((const uint8 *)(desc) + 4)
+#define SHADOW_SPRITE(sel, kind, x, y, desc, seg) \
+	shadow_sprite((sel), (kind), (x), (y), SPRITE_DATA(desc))
+#define BLIT_PAIR(pair, kind, x, y, desc) \
+	sprite_blit_pair((pair), (kind), (x), (y), SPRITE_DATA(desc))
+#define BLIT_PAIR_AT(pair, kind, x, y, src) \
+	sprite_blit_pair((pair), (kind), (x), (y), (src))
+#else
+#define SHADOW_SPRITE(sel, kind, x, y, desc, seg) \
+	shadow_sprite((sel), (kind), (x), (y), (int16)(FP_OFF(desc) + 4), (uint16)(seg))
+#define BLIT_PAIR(pair, kind, x, y, desc) \
+	sprite_blit_pair((pair), (kind), (x), (y), (int16)(FP_OFF(desc) + 4))
+#define BLIT_PAIR_AT(pair, kind, x, y, src) \
+	sprite_blit_pair((pair), (kind), (x), (y), (int16)(FP_OFF(src)))
+#endif
 
 const uint8 g_palette_registers[17] = {
 	0x00, 0x3b, 0x3d, 0x3f, 0x00, 0x04, 0x3c, 0x07, 0x38,
@@ -29,6 +53,18 @@ uint16 g_pal_rgb[16] = {           /* DGROUP 0x1122 */
 
 void set_dac_palette(void)
 {
+#ifdef SS_SDL
+	int16 i;
+
+	for (i = 0; i != 16; i++) {
+		uint16 w = g_pal_rgb[i];
+
+		ss_set_dac((int)i,
+		           (int)(((uint16)w >> 8) << 3),
+		           (int)(((w & 0xf0) >> 1)),
+		           (int)((w & 0x0f) << 3));
+	}
+#else
 	union REGS in, out;
 	int16 i;
 
@@ -45,6 +81,7 @@ void set_dac_palette(void)
 		in.x.bx = (uint16)((i << 8) | i);
 		int86(0x10, &in, &out);
 	}
+#endif
 }
 
 /* 0x4693 */
@@ -203,7 +240,9 @@ uint16 g_sound_request, g_game_end_flag, g_reserved_b;
 /* 0xA206 */
 
 extern uint16 g_objpic_at;
+#ifndef SS_SDL
 void shadow_sprite(int16, int16, int16, int16, int16, uint16);
+#endif
 
 struct sprite_descriptor {
 	uint16 width;
@@ -215,6 +254,10 @@ typedef char sprite_descriptor_size_check[(sizeof(struct sprite_descriptor) == 4
 
 static struct sprite_descriptor far *sprite_descriptor_at(uint16 seg, uint16 id)
 {
+#ifdef SS_SDL
+	uint16 *index = SS_PTR(uint16, seg, 0);
+	return (struct sprite_descriptor *)SS_PTR(uint8, seg, index[id]);
+#else
 	uint16 far *index;
 	struct sprite_descriptor far *desc;
 
@@ -223,6 +266,7 @@ static struct sprite_descriptor far *sprite_descriptor_at(uint16 seg, uint16 id)
 	FP_SEG(desc) = seg;
 	FP_OFF(desc) = index[id];
 	return desc;
+#endif
 }
 
 /* 0xA206 */
@@ -242,8 +286,8 @@ void sprite_draw_anchored(int16 px, int16 py, int16 kind)
 	if (adj >= 0)
 		py = (int16)((uint16)py - (uint16)adj);
 
-	shadow_sprite(3, (int16)(desc->height & 0xff), px, py,
-	              (int16)(FP_OFF(desc) + 4), (uint16)g_objpic_at);	/* A22A-22D */
+	SHADOW_SPRITE(3, (int16)(desc->height & 0xff), px, py, desc,
+	              g_objpic_at);	/* A22A-22D */
 }
 
 void map_record_show(int16 rec_no, int16 transition);
@@ -257,7 +301,12 @@ extern uint16 g_hold_length;				/* 0x9f26 */
 void sprite_draw_dispatch(int16 a, int16 b, int16 c);		/* 0xA097 */
 extern uint16 g_objpic_at;				/* 0xa9a8 */
 
+#ifdef SS_SDL
+void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y,
+                      const uint8 *src);
+#else
 void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y, int16 data_off);
+#endif
 
 /* 0xA097 */
 
@@ -266,10 +315,11 @@ void sprite_draw_dispatch(int16 x, int16 y, int16 id)
 {
 	struct sprite_descriptor far *desc = sprite_descriptor_at(g_objpic_at, (uint16)id);
 
-	sprite_blit_pair((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
-	         (int16)(desc->height & 0xff), x, y, (int16)(FP_OFF(desc) + 4));
+	BLIT_PAIR((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
+	         (int16)(desc->height & 0xff), x, y, desc);
 }
 
+#ifndef SS_SDL
 void shadow_sprite(int16 sel, int16 kind, int16 x, int16 y, int16 data_off, uint16 seg)
 {
 	union REGS r, noop;
@@ -295,20 +345,30 @@ void shadow_sprite(int16 sel, int16 kind, int16 x, int16 y, int16 data_off, uint
 	noop.x.si = 0; noop.x.di = 0;
 	int86x(0x28, &noop, &noop, &back);
 }
+#endif
 
 extern uint8 g_pixel_order[256];		/* 0x9e16 */
 extern int16 g_hw_config;				/* 0x9e14 */
 
+#ifdef SS_SDL
+void remap_group(int16 kind, const uint8 *src, int16 grp)
+#else
 void remap_group(int16 kind, int16 data_off, int16 grp)
+#endif
 {
+#ifdef SS_SDL
+	uint8 *dst = SS_PTR(uint8, g_mem_next, 0);
+#else
 	uint8 far *dst;
 	uint8 far *src;
-	uint16 n, i, j;
 
 	FP_SEG(dst) = (uint16)g_mem_next;
 	FP_OFF(dst) = 0;
 	FP_SEG(src) = g_objpic_at;
 	FP_OFF(src) = (uint16)data_off;
+#endif
+	uint16 n, i, j;
+
 
 	n = (uint16)kind * 4;
 	for (i = 0; i != n; i++)
@@ -318,23 +378,87 @@ void remap_group(int16 kind, int16 data_off, int16 grp)
 }
 
 /* 0x9EFD */
+#ifdef SS_SDL
+void sprite_expand_group4(int16 kind, int16 x, int16 y, const uint8 *src)
+{
+	(void)x; (void)y;
+	remap_group(kind, src, g_hw_config == HW_CONFIG_20 ? 8 : 4);
+}
+#else
 void sprite_expand_group4(int16 kind, int16 x, int16 y, int16 data_off)
 {
 	(void)x; (void)y;
 	remap_group(kind, data_off, g_hw_config == HW_CONFIG_20 ? 8 : 4);
 }
+#endif
 
 /* 0x9FAF */
 
+#ifdef SS_SDL
+void sprite_expand_group2(int16 kind, int16 x, int16 y, const uint8 *src)
+{
+	(void)x; (void)y;
+	remap_group(kind, src, g_hw_config == HW_CONFIG_20 ? 4 : 2);
+}
+#else
 void sprite_expand_group2(int16 kind, int16 x, int16 y, int16 data_off)
 {
 	(void)x; (void)y;
 	remap_group(kind, data_off, g_hw_config == HW_CONFIG_20 ? 4 : 2);
 }
+#endif
 
 /* 0x9E3B */
 
 /* 0x9E3B */
+#ifdef SS_SDL
+void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y,
+                      const uint8 *src)
+{
+	int16 al = pair & 0xff;
+	int16 idx = ((pair >> 8) & 0xff) - 1;
+
+	if (al == 0)
+	{
+		switch (idx)
+		{
+		case SPRITE_PAIR_SINGLE_3:
+			shadow_sprite(3, kind, x, y, src);
+			break;
+		case SPRITE_PAIR_SINGLE_4:
+			shadow_sprite(4, kind, x, y, src);
+			break;
+		case SPRITE_PAIR_DRAW_ERASE:
+			shadow_sprite(4, kind, x, y, src);
+			shadow_sprite(3, kind, x, y, src);
+			break;
+		case SPRITE_PAIR_TWO_PART:
+			shadow_sprite(4, kind, x, y, src);
+			shadow_sprite(4, kind, x + 0x20, y, src + kind * 16);
+			break;
+		}
+		return;
+	}
+
+	switch (idx)
+	{
+	case SPRITE_PAIR_EXPAND_2:
+		sprite_expand_group2(kind, x, y, src);
+		shadow_sprite(3, kind, x, y, SS_PTR(uint8, g_mem_next, 0));
+		break;
+	case SPRITE_PAIR_EXPAND_4:
+		sprite_expand_group4(kind, x, y, src);
+		shadow_sprite(4, kind, x, y, SS_PTR(uint8, g_mem_next, 0));
+		break;
+	default:
+		sprite_expand_group4(kind, x, y, src);
+		shadow_sprite(4, kind, x + 0x20, y, SS_PTR(uint8, g_mem_next, 0));
+		sprite_expand_group4(kind, x, y, src + kind * 16);
+		shadow_sprite(4, kind, x, y, SS_PTR(uint8, g_mem_next, 0));
+		break;
+	}
+}
+#else
 void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y, int16 data_off)
 {
 	int16 al = pair & 0xff;
@@ -380,6 +504,7 @@ void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y, int16 data_off)
 		break;
 	}
 }
+#endif
 
 /* 0x4866 */
 
@@ -397,7 +522,11 @@ void wait_ticks(int16 a)
 	draw_text_window(x, y, w, h);
 	shadow_text_draw(TEXT_COLOUR_NORMAL, x, y, (char *)&g_credits);
 	g_shadow_tick_count = 0;
+#ifdef SS_SDL
+	ss_wait_ticks((int32)(g_hold_length * 5));
+#else
 	while (g_hold_length * 5 > g_shadow_tick_count)		 			;
+#endif
 	shadow_video_page(SHADOW_PAGE_PREVIOUS);
 }
 
@@ -411,11 +540,11 @@ void sprite_blit_center(int16 x, int16 y, int16 id)
 {
 	struct sprite_descriptor far *desc = sprite_descriptor_at(g_objpic_at, (uint16)id);
 
-	sprite_blit_pair((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
+	BLIT_PAIR((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
 	         (int16)(desc->height & 0xff),
 	         (int16)((uint16)x - ((uint16)desc->width << 3)),
 	         (int16)((uint16)y - (uint16)desc->height),
-	         (int16)(FP_OFF(desc) + 4));
+	         desc);
 }
 
 /* 0xA061 */
@@ -423,11 +552,11 @@ void sprite_blit_offset(int16 x, int16 y, int16 id)
 {
 	struct sprite_descriptor far *desc = sprite_descriptor_at(g_objpic_at, (uint16)id);
 
-	sprite_blit_pair((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
+	BLIT_PAIR((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
 	         (int16)(desc->height & 0xff),
 	         (int16)((uint16)x - ((uint16)desc->width << 3)),
 	         (int16)((uint16)y - ((uint16)desc->height >> 1)),
-	         (int16)(FP_OFF(desc) + 4));
+	         desc);
 }  /* 0xA061 */
 
 /* DGROUP 0x23a0 */
@@ -600,7 +729,10 @@ int16 hero_cursor_rotate(int16 a)
 	(void)sprite_draw_current(a + SPRITE_HERO_CURSOR, SPRITE_DRAW_SOLID,
 	               (int16)((int16)g_hero_slots[p].x >> 3),   /* 2A5-2A7 */
 	               (int16)g_hero_slots[p].y);
-	if (g_actor_table[g_selected_hero_slot].state != 0) {
+	/* 0x2A5-0x2A7: only step past an *empty* slot.  The decompiled
+	   condition was inverted, which made the highlight cycle through the
+	   whole party every frame. */
+	if (g_actor_table[g_selected_hero_slot].state == 0) {
 		g_selected_hero_slot++;
 		g_selected_hero_slot &= 3;
 	}
@@ -608,7 +740,175 @@ int16 hero_cursor_rotate(int16 a)
 	return 0;
 }
 
-/* 0x32E */
+#ifdef SS_SDL
+/* The static map page is also where the portrait health bars live, so the
+   icon is kept clear of them: a 16-pixel item is shifted 2 px left beside a
+   left-column hero and 4 px left beside a right-column hero. */
+#define GROUND_ICON_SHIFT_LEFT	2
+#define GROUND_ICON_SHIFT_RIGHT	4
+
+/* Snapshot of the map behind a corner, taken before the portraits and
+   gauges are drawn, so erasing an old icon never wipes the health bar. */
+#define GROUND_BG_DX	(-20)
+#define GROUND_BG_DY	(-8)
+#define GROUND_BG_W	56
+#define GROUND_BG_H	28
+
+struct ground_corner_cache {
+	int16 site;
+	int16 hx, hy;
+	uint16 id;
+	uint16 map;
+	int16 lx, ly, lw, lh;	/* last icon rectangle, for erasing */
+};
+
+static struct ground_corner_cache g_ground_corner[4];
+static uint8 g_ground_bg[4][GROUND_BG_W * GROUND_BG_H];
+static uint16 g_ground_stamp = 0xffff;
+static uint16 g_map_draw_stamp;
+
+static int16 ground_item_near(int16 slot, int16 *hx_out, int16 *hy_out)
+{
+	struct actor_rec *a = &g_actor_table[slot];
+	int16 kind = (int16)(uint8)g_hero_slots[slot].state;
+	int16 i;
+
+	*hx_out = (int16)a->x;
+	*hy_out = (int16)a->y;
+	if (kind > HERO_SLOT_STATE_LIMIT || a->state == 0)
+		return -1;
+
+	for (i = 0; i != SITE_COUNT; i++) {
+		struct site_rec *s = &g_site_table[i];
+		int16 k = (int16)SITE_KIND(s);
+		int16 dx, dy;
+
+		if (s->id == 0)
+			continue;
+		if (k == 0 || k >= SITE_KIND_LIMIT || k == SITE_KIND_TRIGGER)
+			continue;
+		if ((SITE_FLAG_LO(s) & 1) == 0)
+			continue;
+		if ((int16)SITE_MAP_BYTE(s) != (int16)(int8)g_map_mode_char)
+			continue;
+		dx = (int16)s->x - (int16)a->x;
+		dy = (int16)s->y - (int16)a->y;
+		if (dx < 0) dx = -dx;
+		if (dy < 0) dy = -dy;
+		if (dx > 0x20 || dy > 0x20)
+			continue;
+		return i;
+	}
+	return -1;
+}
+
+/* Call before the portraits/gauges are painted over the static map page. */
+static void ground_corners_capture(void)
+{
+	int16 i;
+
+	if (g_ground_stamp == g_map_draw_stamp)
+		return;
+	for (i = 0; i != 4; i++) {
+		int16 px = (int16)g_rect_panel_boxes[i].x + GROUND_BG_DX;
+		int16 py = (int16)g_rect_panel_boxes[i].y + GROUND_BG_DY;
+		int16 h = GROUND_BG_H;
+
+		if (py + h > SS_SCREEN_H)
+			h = (int16)(SS_SCREEN_H - py);
+		ss_read_static_rect(g_ground_bg[i], GROUND_BG_W,
+		                    px, py, GROUND_BG_W, h);
+	}
+	g_ground_stamp = g_map_draw_stamp;
+}
+
+static void ground_corner_erase(int16 i)
+{
+	struct ground_corner_cache *c = &g_ground_corner[i];
+	int16 bx, by;
+
+	if (c->lw <= 0 || c->lh <= 0)
+		return;
+	bx = (int16)g_rect_panel_boxes[i].x + GROUND_BG_DX;
+	by = (int16)g_rect_panel_boxes[i].y + GROUND_BG_DY;
+	ss_write_static_rect(g_ground_bg[i], GROUND_BG_W,
+	                     (int16)(c->lx - bx), (int16)(c->ly - by),
+	                     c->lx, c->ly, c->lw, c->lh);
+	c->lw = 0;
+	c->lh = 0;
+}
+
+/* The corner buttons used to open the old backpack panel.  They now show the
+   first ground item near each hero; the cache is refreshed from the same
+   places the map/hero overlay is redrawn (spawn, move, death, item changes). */
+static void draw_ground_item_corners(int16 force)
+{
+	int16 i;
+
+	ground_corners_capture();
+
+	for (i = 0; i != 4; i++) {
+		int16 hx, hy;
+		int16 site = ground_item_near(i, &hx, &hy);
+		struct ground_corner_cache *c = &g_ground_corner[i];
+		int16 changed = force || c->site != site ||
+		                c->hx != hx || c->hy != hy;
+
+		if (site >= 0) {
+			struct site_rec *s = &g_site_table[site];
+
+			if (c->id != s->id || c->map != s->map)
+				changed = 1;
+		}
+		if (!changed)
+			continue;
+
+		c->site = site;
+		c->hx = hx;
+		c->hy = hy;
+		if (site >= 0) {
+			c->id = g_site_table[site].id;
+			c->map = g_site_table[site].map;
+		} else {
+			c->id = 0;
+			c->map = 0;
+		}
+
+		ground_corner_erase(i);
+
+		if (site >= 0) {
+			int16 k = (int16)SITE_KIND(&g_site_table[site]);
+			struct sprite_descriptor *desc =
+			    sprite_descriptor_at(g_objpic_at, (uint16)k);
+			int16 px = (int16)g_rect_panel_boxes[i].x;
+			int16 py = (int16)g_rect_panel_boxes[i].y;
+			int16 sw = (int16)((int16)desc->width * 16);
+			int16 sh = (int16)(desc->height & 0xff);
+			int16 ox = (desc->width == 1) ? 4 : 0;
+			int16 oy = (int16)((16 - sh) >> 1);
+			int16 dx = (int16)(px + ox);
+			int16 left = (px < SS_SCREEN_W / 2);
+
+			dx -= left ? GROUND_ICON_SHIFT_LEFT : GROUND_ICON_SHIFT_RIGHT;
+			if (left) {
+				/* keep the icon right of the health bar */
+				if (dx < (int16)(px + 2))
+					dx = (int16)(px + 2);
+			} else {
+				/* keep the icon left of the health bar */
+				if (dx + sw > (int16)(px + 16))
+					dx = (int16)(px + 16 - sw);
+			}
+
+			c->lx = dx;
+			c->ly = (int16)(py + oy);
+			c->lw = sw;
+			c->lh = sh;
+			sprite_draw_dispatch(c->lx, c->ly, k);
+		}
+	}
+}
+#endif
 
 /* 0x032E */
 void draw_hero_overlay(void)
@@ -617,6 +917,9 @@ void draw_hero_overlay(void)
 	struct rect_rec *r;
 
 	shadow_video_page(SHADOW_PAGE_MAP);				/* 334-33B */
+#ifdef SS_SDL
+	ground_corners_capture();
+#endif
 
 	for (i = 0, r = g_hero_slot_boxes; i != 4; i++, r++)	/* 33E-355 */
 	{
@@ -631,6 +934,9 @@ void draw_hero_overlay(void)
 		}
 	}
 
+#ifdef SS_SDL
+	draw_ground_item_corners(0);
+#endif
 	shadow_video_page(SHADOW_PAGE_PREVIOUS);				/* 396-39D */
 }
 
@@ -643,6 +949,9 @@ void draw_hero_gauges(void)
 	int16 i;
 
 	shadow_video_page(SHADOW_PAGE_MAP);
+#ifdef SS_SDL
+	ground_corners_capture();
+#endif
 	for (i = 0; i != 4; i++)
 	{
 		struct rect_rec *rec = (&g_hero_slots[i]);
@@ -657,6 +966,9 @@ void draw_hero_gauges(void)
 			sprite_draw_current(SPRITE_CONTROL_OVERLAY, SPRITE_DRAW_SOLID, (int16)(int16)RECT(rec)->x >> 3,
 			         (int16)rec->y);		/* 251-264 */
 	}
+#ifdef SS_SDL
+	draw_ground_item_corners(0);
+#endif
 	shadow_video_page(SHADOW_PAGE_PREVIOUS);
 }
 
@@ -684,8 +996,8 @@ int16 sprite_draw_far(int16 id, int16 x, int16 y)
 		bh = (int16)(((uint16)desc->height >> 1) & 0xff);
 	}
 
-	shadow_sprite(0x1d, (bh << 8) | ((int16)(uint16)desc->height & 0xff),	/* 9D4F-9D52 */
-	              x, y, (int16)(FP_OFF(desc) + 4), (uint16)g_objpic_at);	/* 9D54-9D57 */
+	SHADOW_SPRITE(0x1d, (bh << 8) | ((int16)(uint16)desc->height & 0xff),	/* 9D4F-9D52 */
+	              x, y, desc, g_objpic_at);	/* 9D54-9D57 */
 	return 0;
 }
 
@@ -698,10 +1010,10 @@ void sprite_draw_selector(int16 x, int16 y, int16 id)
 {
 	struct sprite_descriptor far *desc = sprite_descriptor_at(g_mappic_at, (uint16)id);
 
-	shadow_sprite(3, (int16)(uint16)desc->height & 0xff,	/* A1AB-A1AD */
+	SHADOW_SPRITE(3, (int16)(uint16)desc->height & 0xff,	/* A1AB-A1AD */
 	              x,
 	              (int16)((uint16)y - (uint16)desc->height),
-	              (int16)(FP_OFF(desc) + 4), (uint16)g_mappic_at);
+	              desc, g_mappic_at);
 }
 
 extern uint16 g_mouse_button;				/* 0xa990 */
@@ -716,7 +1028,7 @@ void world_map_click_view(void)
 {
 	int16 col, row, row_saved, found, out_idx;
 	int16 dest_x, dest_y, src_x, src_y;
-	int16 cell, tile, saved_char, i;
+	int16 cell, tile;
 
 	if ((int16)g_mouse_y <= 8)					/* 8660-8667 */
 		return;
@@ -737,6 +1049,7 @@ void world_map_click_view(void)
 		return;
 
 	found = path_find_distance((int16)PARTY_REC(0)->grid_x, (int16)PARTY_REC(0)->grid_y, col, row, &out_idx);	/* 86BA-86D2 */
+	(void)found;
 
 	dest_x = (row & 1) ? 0 : 8;						/* 86D5-86E2 */
 	dest_x += col << 4;							/* 86E5-86EC */
@@ -745,8 +1058,17 @@ void world_map_click_view(void)
 	src_y = (int16)PARTY_REC(0)->grid_y * 12 + 8;					/* 871D-872D */
 	(void)src_x; (void)src_y;
 
+	/* The left button now surveys the hex in text: terrain (or the
+	   refugees/monsters in it) and the time the crossing costs. */
+	if (g_mouse_button == 1) {
+		describe_world_hex(col, row, out_idx);
+		while (mouse_button_read() != 0)
+			;
+		return;
+	}
+
 	if ((uint16)col == PARTY_REC(0)->grid_x && row == (int16)PARTY_REC(0)->grid_y) {	/* 8730-873D */
-		if (g_mouse_button == 1) {
+		if (g_mouse_button == 2) {
 			tile_first_entry();
 			terrain_change();
 		} else {
@@ -756,7 +1078,7 @@ void world_map_click_view(void)
 				;
 			shadow_video_page(SHADOW_PAGE_PREVIOUS);
 		}
-	} else if (g_mouse_button == 1) {						/* 8770-8775 */
+	} else if (g_mouse_button == 2) {						/* 8770-8775 */
 		cell = col + TERRAIN_WIDTH * row;						/* 877A-8785 */
 		tile = (int16)(int8)g_map_tile[cell];
 		if ((tile & TILE_VISIBLE) == 0)							/* 878D-8793 */
@@ -773,34 +1095,7 @@ void world_map_click_view(void)
 		party_update_all(0, 1);
 		clock_draw_time();
 		shadow_page_flip();
-	} else if (g_mouse_button == 2) {						/* 8801-8806 */
-		for (i = 0; i != 10; ++i) {						/* 880B-8819 */
-			shadow_screen_restore(7);
-			sprite_draw_anchored(dest_x, dest_y - row_saved * 12, 0x39);	/* 8825-883F */
-			clock_advance(1);
-			party_update_all(1, 1);
-			clock_draw_time();
-			shadow_page_flip();
-		}
-		if (found != 0) {								/* 8862-8866 */
-			cell = col + TERRAIN_WIDTH * row;						/* 8868-8874 */
-			g_map_tile[cell] |= TILE_VISIBLE;
-			saved_char = (int16)(int8)g_map_mode_char;		/* 887C-8880 */
-			g_map_mode_char = g_terrain_grid[cell];					/* 888A-8896 */
-			map_record_show(g_terrain_grid[cell], 1);
-			shadow_screen_restore(7);
-			free_list_clear_nodes();
-			actor_sweep();
-			draw_terrain_sprites();
-			clock_draw_time();
-			shadow_page_flip();
-			while (mouse_button_read() == 0)
-				;
-			g_map_mode_char = (uint8)saved_char;			/* 88C3-88C6 */
-			draw_map_view();
-		}
 	}
-
 	while (mouse_button_read() != 0)							/* 88CC-88D3 */
 		;
 }
@@ -816,8 +1111,8 @@ void sprite_draw_segment(int16 x, int16 y, int16 id, uint16 seg)
 	else if (desc->width == 4)				/* A1D6-A1DB */
 		x -= 0x10;
 
-	sprite_blit_pair((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
-	         (int16)(desc->height & 0xff), x, y, (int16)(FP_OFF(desc) + 4));
+	BLIT_PAIR((((uint16)desc->width & 0xff) << 8) | ((uint16)desc->width >> 8),
+	         (int16)(desc->height & 0xff), x, y, desc);
 }
 
 extern uint16 g_missile_at;
@@ -840,6 +1135,22 @@ void sprite_draw_field(int16 x, int16 y, struct sprite_node_rec *rec, int16 sel)
 	uint16 idx = (uint16)rec->id;
 	uint16 frame, data;
 
+#ifdef SS_SDL
+	desc = SS_PTR(struct missile_descriptor, g_missile_at,
+	              idx * sizeof(struct missile_descriptor));
+
+	frame = ((uint16)rec->stride_index >= desc->frame_limit) ? 0u : (uint16)rec->stride_index;	/* A130-A137 */
+	SPRITE_FRAME_WORD(rec) = (uint16)frame;
+
+	frames = SS_PTR(uint16, g_missile_at, desc->frame_table);
+	data = frames[frame];					/* A13D-A143 */
+
+	BLIT_PAIR_AT((int16)(((desc->width & 0xff) << 8) | ((uint16)sel & 0xff)),	/* A146-A148 */
+	         (int16)(desc->height & 0xff),
+	         x - (int16)(desc->width << 3),			/* A11B-A121 */
+	         y - (int16)(desc->height >> 1),			/* A128-A12A */
+	         SS_PTR(uint8, g_missile_at, data));
+#else
 	FP_SEG(desc) = g_missile_at;
 	FP_OFF(desc) = idx * sizeof(struct missile_descriptor);
 
@@ -855,6 +1166,7 @@ void sprite_draw_field(int16 x, int16 y, struct sprite_node_rec *rec, int16 sel)
 	         x - (int16)(desc->width << 3),			/* A11B-A121 */
 	         y - (int16)(desc->height >> 1),			/* A128-A12A */
 	         (int16)data);
+#endif
 }
 
 uint16 g_sprite_draw_x;                    /* 0xa9aa */
@@ -901,8 +1213,12 @@ void sprite_draw_state_frame(uint16 seg)
 	uint16 far *frames;
 	uint16 x, y, sel, cnt, off;
 
+#ifdef SS_SDL
+	bank = SS_PTR(struct sprite_bank_header, seg, 0);
+#else
 	FP_SEG(bank) = seg;
 	FP_OFF(bank) = 0;
+#endif
 
 	x = g_sprite_draw_x - (bank->x_offset << 3);				/* 9D78-9D81 */
 	if ((int16)x < 0)
@@ -916,8 +1232,13 @@ void sprite_draw_state_frame(uint16 seg)
 	if (y >= SCREEN_MAX_Y)
 		return;								/* 9DB6-9DBA */
 
+#ifdef SS_SDL
+	entry = SS_PTR(struct sprite_state_entry, seg,
+	               bank->state_table + (uint16)g_sprite_stride_index * 6u);
+#else
 	FP_SEG(entry) = seg;
 	FP_OFF(entry) = bank->state_table + (uint16)g_sprite_stride_index * 6u;	/* 9DBD-9DCA */
+#endif
 
 	g_sprite_step_x = entry->step_x;					/* 9DCC-9DCD */
 	g_sprite_step_y = entry->step_y;					/* 9DD3-9DD6 */
@@ -929,20 +1250,79 @@ void sprite_draw_state_frame(uint16 seg)
 		g_sprite_frame_index = 0;						/* 9DF7-9DF9 */
 	cnt = g_sprite_frame_index;
 
+	sel = ((uint16)g_node_selector - 1u) & 7u;				/* 9E02-9E08 */
+#ifdef SS_SDL
+	dirs = SS_PTR(struct sprite_direction_table, seg, entry->frame_table);
+	frames = SS_PTR(uint16, seg, dirs->frame_offset[sel]);
+#else
 	FP_SEG(dirs) = seg;
 	FP_OFF(dirs) = entry->frame_table;
-	sel = ((uint16)g_node_selector - 1u) & 7u;				/* 9E02-9E08 */
 	FP_SEG(frames) = seg;
 	FP_OFF(frames) = dirs->frame_offset[sel];				/* 9E0C-9E10 */
+#endif
 	off = frames[cnt];							/* 9E13-9E17 */
 
 	sel = ((uint16)g_node_selector - 1u) & 3u;				/* 9E1C-9E2E */
 	if ((((uint16)g_node_selector - 1u) & 4u) == 0)
 		sel = 0;
 
+#ifdef SS_SDL
+	BLIT_PAIR_AT((int16)((2u << 8) | sel), (int16)(bank->y_offset & 0xff),
+	             (int16)x, (int16)y, SS_PTR(uint8, seg, off));
+#else
 	sprite_blit_pair((int16)((2u << 8) | sel), (int16)(bank->y_offset & 0xff),
 	                 (int16)x, (int16)y, (int16)off);
+#endif
 }
+
+#ifdef SS_SDL
+/* Screen rectangle of a party member's current sprite.  Hero actors use the
+   VMPL banks: the frame is two 16-pixel units wide and the bank's y_offset is
+   both the sprite height and its vertical anchor.  The frame is drawn with
+   its top-left at the isometric projection minus the bank offsets; the
+   character art occupies the centred 16 pixels of the 32-pixel frame. */
+void sprite_actor_rect(int16 hero_slot, int16 gx, int16 gy,
+                       int16 *left, int16 *top, int16 *right, int16 *bottom)
+{
+	struct sprite_bank_header far *bank;
+	uint16 seg;
+
+	if (hero_slot < 0 || hero_slot > 3) {
+		*left = *top = *right = *bottom = 0;
+		return;
+	}
+	seg = g_vmpl_para[g_vmpl_slot[hero_slot]];
+	bank = SS_PTR(struct sprite_bank_header, seg, 0);
+	*left = (int16)((int16)gx + (int16)gy
+	                - (int16)(bank->x_offset << 3) + 8);
+	*top = (int16)(((int16)gy >> 1) - ((int16)gx >> 1) + 0x7c
+	               - (int16)bank->y_offset);
+	*right = (int16)(*left + 16);
+	*bottom = (int16)(*top + (int16)bank->y_offset);
+}
+
+/* Monsters use the VMON banks and, unlike the party frames, the art can
+   occupy the full two-unit width. */
+void sprite_monster_rect(int16 kind, int16 gx, int16 gy,
+                         int16 *left, int16 *top, int16 *right, int16 *bottom)
+{
+	struct sprite_bank_header far *bank;
+	uint16 seg;
+
+	if (kind < 5) {
+		*left = *top = *right = *bottom = 0;
+		return;
+	}
+	seg = g_monster_bank_segments[(int16)kind - 5];
+	bank = SS_PTR(struct sprite_bank_header, seg, 0);
+	*left = (int16)((int16)gx + (int16)gy
+	                - (int16)(bank->x_offset << 3));
+	*top = (int16)(((int16)gy >> 1) - ((int16)gx >> 1) + 0x7c
+	               - (int16)bank->y_offset);
+	*right = (int16)(*left + 32);
+	*bottom = (int16)(*top + (int16)bank->y_offset);
+}
+#endif
 
 extern int16 shadow_screen_restore(uint16 sel);	/* 0xD450 */
 extern int16 shadow_page_flip(void);			/* 0xD3D0 */
@@ -984,11 +1364,17 @@ void far_pair_load(int16 index, uint16 seg)
 	uint16 far *p;
 	uint16 off;
 
+#ifdef SS_SDL
+	tab = SS_PTR(uint16, seg, (uint16)(index * 2));
+	off = *tab;
+	p = SS_PTR(uint16, seg, off);
+#else
 	FP_SEG(tab) = (uint16)seg;
 	FP_OFF(tab) = (uint16)(index * 2);
 	off = *tab;
 	FP_SEG(p) = (uint16)seg;
 	FP_OFF(p) = (uint16)off;
+#endif
 	g_panel_stride_mode = p[0];
 	g_row_height = p[1];						/* 1FE-1FF */
 }
@@ -1012,6 +1398,12 @@ void record_set_mode(struct site_rec *o, int16 x, int16 y, int16 mode_value)
 /* 0x02E2 */
 void draw_glyph_corners(void)
 {
+#ifdef SS_SDL
+	(void)shadow_video_page(SHADOW_PAGE_MAP);							/* 2E8-2EF */
+	ground_corners_capture();
+	draw_ground_item_corners(1);
+	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);						/* 320-327 */
+#else
 	struct rect_rec *p = g_rect_panel_boxes;
 	int16 i = 0;
 
@@ -1024,6 +1416,7 @@ void draw_glyph_corners(void)
 		p++;
 	}
 	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);						/* 320-327 */
+#endif
 }
 
 /* 0xF94 */
@@ -1069,8 +1462,8 @@ void sprite_draw_index(int16 x, int16 y, int16 idx)
 	}
 
 	desc = sprite_descriptor_at(g_mappic_at, si);
-	shadow_sprite(4, (int16)(desc->height & 0xffu), x, y,
-	              (int16)(FP_OFF(desc) + 4), (uint16)g_mappic_at);	/* A188-A18D */
+	SHADOW_SPRITE(4, (int16)(desc->height & 0xffu), x, y, desc,
+	              g_mappic_at);	/* A188-A18D */
 }
 
 /* 0xA0C1 */
@@ -1080,8 +1473,8 @@ void sprite_draw_forced(int16 x, int16 y, int16 id)
 {
 	struct sprite_descriptor far *desc = sprite_descriptor_at(g_objpic_at, (uint16)id);
 
-	sprite_blit_pair((((uint16)desc->width & 0xffu) << 8) | 1u,
-	         (int16)(desc->height & 0xffu), x, y, (int16)(FP_OFF(desc) + 4));
+	BLIT_PAIR((((uint16)desc->width & 0xffu) << 8) | 1u,
+	         (int16)(desc->height & 0xffu), x, y, desc);
 }
 
 /* 0x1BE */
@@ -1161,6 +1554,9 @@ void map_record_show(int16 rec_no, int16 transition)
 	uint8 *bytp;
 	int16 i, j, x, y, val, kind, last_kind = 0;
 
+#ifdef SS_SDL
+	++g_map_draw_stamp;
+#endif
 	g_detect_invisible_ticks = 0;						/* 93F9-93FB */
 	if (transition != 0)							/* 9401-9404 */
 		cursor_set(0);						/* 9406-940A */
@@ -1199,7 +1595,7 @@ void map_record_show(int16 rec_no, int16 transition)
 					kind = (int16)(int16)val >> 8;
 					if (kind >= MONSTER_REQUEST_DEATH_KNIGHT)
 						last_kind = kind;
-					(void)spawn_descriptor(kind, (i << 4) + 8, (j << 4) + 8);	/* 9513-952D */
+					(void)spawn_descriptor(kind, (j << 4) + 8, (i << 4) + 8);	/* 9513-952D */
 				}
 				if (g_map_load_gate == 0 && rec_no <= 10 && val >= 0x22	/* 9534-9545 */
 				    && ROLL_D100() > 25) {			/* 9547-9554 */
@@ -1208,9 +1604,13 @@ void map_record_show(int16 rec_no, int16 transition)
 				}
 			}
 
-			if (val >= 0x20)					/* 9569-956D */
+			/* Only icons 0x20+ are blocking entities.  Cells with a
+			   monster-spawn high byte (e.g. 0x0612) have a normal floor
+			   icon and must not be re-inserted as elevated objects; the
+			   old word test also used a stale g_row_height for them. */
+			if (((uint8)val & 0xe0) != 0)			/* 9569-956D */
 				(void)free_list_insert(0, (9 - j) << 4, i << 4, 1,
-				         (int16)pw, x, y - (int16)g_row_height + 0xf);	/* 956F-959E */
+				         FREE_DATA(pw), x, y - (int16)g_row_height + 0xf);	/* 956F-959E */
 
 			pw -= 1;	x -= 0x10;	y += 8;			/* 95A1-95A9 */
 		}

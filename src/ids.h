@@ -301,34 +301,50 @@
 #define CREATURE_ATTACK_LIGHT2	6
 #define CREATURE_IDLE2		7
 
+/* Inventory-item use actions.  The low byte of an item's site id is the
+   action code handled by apply_character_action(); the action code is also
+   the item icon.  The values below therefore name the item being used, not
+   the internal weapon-icon number. */
 #define ACTION_OP_BASE			3
 #define ACTION_CASE(op)			((op) - ACTION_OP_BASE)
-#define ACTION_SET_WEAPON_MODE_9	0x03
-#define ACTION_SET_SPRITE_04		0x04
-#define ACTION_SET_SPRITE_05		0x05
-#define ACTION_SET_SPRITE_08		0x08
-#define ACTION_SET_SPRITE_0A		0x0a
-#define ACTION_SET_SPRITE_0C		0x0c
-#define ACTION_SET_SPRITE_13		0x13
-#define ACTION_SET_WEAPON_MODE_3	0x09
-#define ACTION_DROP_IF_FLINT_0B	0x0b
-#define ACTION_DROP_IF_FLINT_12	0x12
-#define ACTION_PAIR_IF_MODE3_0E	0x0e
-#define ACTION_PAIR_IF_MODE3_0F	0x0f
-#define ACTION_PAIR_IF_MODE6_10	0x10
-#define ACTION_GOLMOON_FIREBALL	0x14
-#define ACTION_GOLMOON_SELECT		0x15
-#define ACTION_GOLMOON_CANCEL		0x16
-#define ACTION_RAISTLIN_SPELL_7	0x19
-#define ACTION_RAISTLIN_SPELL_3	0x1a
-#define ACTION_RAISTLIN_SPELL_2	0x1c
-#define ACTION_RAISTLIN_SPELL_11	0x1d
-#define ACTION_ADD_RANDOM_8		0x27
-#define ACTION_DRAGON_TRANSFORM	0x28
-#define ACTION_ADD_RANDOM_21		0x33
-#define ACTION_LEVEL_DOWN_1		0x34
-#define ACTION_LEVEL_DOWN_2		0x35
-#define ACTION_RESET_LEVEL		0x36
+
+#define ACTION_USE_SPEAR		0x03	/* equip the spear's ranged icon */
+#define ACTION_EQUIP_LONGSWORD		0x04
+#define ACTION_EQUIP_CLUB		0x05
+#define ACTION_EQUIP_TWO_HANDED_SWORD	0x08
+#define ACTION_USE_BOW			0x09	/* equip the bow's ranged icon */
+#define ACTION_EQUIP_LONGSWORD_PLUS1	0x0a
+#define ACTION_FLINT_EQUIP_HAND_AXE	0x0b	/* Flint only */
+#define ACTION_EQUIP_LONGSWORD_PLUS2	0x0c
+#define ACTION_LOAD_BOW_ARROWS		0x0e	/* nock normal arrows */
+#define ACTION_LOAD_BOW_ARROWS_PLUS2	0x0f	/* nock +2 arrows */
+#define ACTION_LOAD_HOOPAK_STONES	0x10	/* load sling stones */
+#define ACTION_FLINT_EQUIP_THROWING_AXE	0x12	/* Flint only */
+#define ACTION_EQUIP_WYRMSLAYER		0x13
+#define ACTION_GOLMOON_ARM_FIREBALL	0x14
+#define ACTION_GOLMOON_SELECT_TARGET	0x15
+#define ACTION_GOLMOON_CANCEL_SPELL	0x16
+#define ACTION_RAISTLIN_ARM_FIREBALL	0x19
+#define ACTION_RAISTLIN_ARM_CHARM	0x1a
+#define ACTION_RAISTLIN_ARM_DETECT_MAGIC	0x1c
+#define ACTION_RAISTLIN_ARM_SPECIAL	0x1d	/* menu entry 11 */
+#define ACTION_HEAL_LIGHT		0x27	/* herbs: 1d8+1 hp */
+#define ACTION_START_DRAGON_SCENE	0x28
+#define ACTION_EAT_FOOD			0x33	/* food: 1d21+6 hp */
+#define ACTION_LEVEL_DRAIN_1		0x34	/* armor class -1 */
+#define ACTION_LEVEL_DRAIN_2		0x35	/* armor class -2 */
+#define ACTION_RESTORE_DRAINED_LEVELS	0x36
+
+#ifdef SS_SDL
+/* The original game never puts an equipped weapon back into a backpack, so
+   its item ids do not describe every weapon icon: using a spear item (kind 3)
+   raises icon 9, and using a bow item (kind 9) raises icon 3.  Weapons the
+   port unequips keep their icon in the low byte and a direction marker in
+   the high byte, so dragging them back restores exactly the original icon. */
+#define SS_ITEM_MARKER_MASK	0xc000u
+#define SS_ITEM_HAND_MARKER	0x8000u
+#define SS_ITEM_RANGED_MARKER	0x4000u
+#endif
 
 #define SPELL_SLEEP		0
 #define SPELL_MAGIC_MISSILE	1
@@ -541,32 +557,34 @@
 #define SPRITE_PAIR_EXPAND_2	0
 #define SPRITE_PAIR_EXPAND_4	1
 
-#define ACTION_IGNORED_06	0x06
-#define ACTION_IGNORED_07	0x07
-#define ACTION_IGNORED_0D	0x0d
-#define ACTION_IGNORED_11	0x11
-#define ACTION_IGNORED_17	0x17
-#define ACTION_IGNORED_18	0x18
-#define ACTION_IGNORED_1B	0x1b
-#define ACTION_IGNORED_1E	0x1e
-#define ACTION_IGNORED_1F	0x1f
-#define ACTION_IGNORED_20	0x20
-#define ACTION_IGNORED_21	0x21
-#define ACTION_IGNORED_22	0x22
-#define ACTION_IGNORED_23	0x23
-#define ACTION_IGNORED_24	0x24
-#define ACTION_IGNORED_25	0x25
-#define ACTION_IGNORED_26	0x26
-#define ACTION_IGNORED_29	0x29
-#define ACTION_IGNORED_2A	0x2a
-#define ACTION_IGNORED_2B	0x2b
-#define ACTION_IGNORED_2C	0x2c
-#define ACTION_IGNORED_2D	0x2d
-#define ACTION_IGNORED_2E	0x2e
-#define ACTION_IGNORED_2F	0x2f
-#define ACTION_IGNORED_30	0x30
-#define ACTION_IGNORED_31	0x31
-#define ACTION_IGNORED_32	0x32
+/* Item ids with no use effect.  apply_character_action() leaves them alone;
+   the explicit cases document which ids the release ignores. */
+#define ACTION_NO_EFFECT_06	0x06
+#define ACTION_NO_EFFECT_07	0x07
+#define ACTION_NO_EFFECT_0D	0x0d
+#define ACTION_NO_EFFECT_11	0x11
+#define ACTION_NO_EFFECT_17	0x17
+#define ACTION_NO_EFFECT_18	0x18
+#define ACTION_NO_EFFECT_1B	0x1b
+#define ACTION_NO_EFFECT_1E	0x1e
+#define ACTION_NO_EFFECT_1F	0x1f
+#define ACTION_NO_EFFECT_20	0x20
+#define ACTION_NO_EFFECT_21	0x21
+#define ACTION_NO_EFFECT_22	0x22
+#define ACTION_NO_EFFECT_23	0x23
+#define ACTION_NO_EFFECT_24	0x24
+#define ACTION_NO_EFFECT_25	0x25
+#define ACTION_NO_EFFECT_26	0x26
+#define ACTION_NO_EFFECT_29	0x29
+#define ACTION_NO_EFFECT_2A	0x2a
+#define ACTION_NO_EFFECT_2B	0x2b
+#define ACTION_NO_EFFECT_2C	0x2c
+#define ACTION_NO_EFFECT_2D	0x2d
+#define ACTION_NO_EFFECT_2E	0x2e
+#define ACTION_NO_EFFECT_2F	0x2f
+#define ACTION_NO_EFFECT_30	0x30
+#define ACTION_NO_EFFECT_31	0x31
+#define ACTION_NO_EFFECT_32	0x32
 
 #define ARMOR_TABLE_A		0
 #define ARMOR_TABLE_B		1
@@ -613,15 +631,19 @@
 #define SITE_SLOT_SLEIGH			48
 #define SITE_SLOT_TILE_REWARD			51
 
-#define EFFECT_KIND_RECOVER_WEAPON_17	4
-#define EFFECT_KIND_RECOVER_WEAPON_9	5
-#define EFFECT_KIND_DEACTIVATE_6	6
-#define EFFECT_KIND_DEACTIVATE_7	7
-#define EFFECT_KIND_DEACTIVATE_8	8
+#define EFFECT_KIND_RECOVER_THROWING_AXE	4
+#define EFFECT_KIND_RECOVER_SPEAR	5
+#define EFFECT_KIND_CLEAR_ARROWS	6
+#define EFFECT_KIND_CLEAR_ARROWS_PLUS2	7
+#define EFFECT_KIND_CLEAR_STONES	8
 #define EFFECT_KIND_FIREBALL		0x0c
 #define EFFECT_KIND_HIT_BOZAK		0x14
+
+/* Effect kinds from here up are monster-hit markers that damage heroes;
+   lower kinds are spells and missiles aimed at monsters. */
+#define EFFECT_KIND_HERO_HIT_BASE	EFFECT_KIND_HIT_BOZAK
 #define EFFECT_KIND_HIT_DEFAULT		0x15
-#define EFFECT_KIND_DEACTIVATE_15	EFFECT_KIND_HIT_DEFAULT
+#define EFFECT_KIND_CLEAR_HIT	EFFECT_KIND_HIT_DEFAULT
 #define EFFECT_KIND_LARGE_EFFECT	0x18
 
 #define WEAPON_STAFF_OF_MAGIUS	0x02
@@ -636,8 +658,8 @@
 #define RANGED_WEAPON_HOOPAK	6
 #define RANGED_WEAPON_SPEAR	9
 #define RANGED_WEAPON_THROWING_AXE 0x11
-#define WEAPON_RECORD_17		0x11
-#define WEAPON_RECORD_9			9
+#define WEAPON_RECORD_THROWING_AXE		0x11
+#define WEAPON_RECORD_SPEAR			9
 #define PROBE_MASK_VISIBLE		0x80
 #define AREA_RADIUS_FIREBALL		42
 #define AREA_RADIUS_LARGE		66

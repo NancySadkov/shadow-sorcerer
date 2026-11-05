@@ -107,7 +107,11 @@ int16 path_find_distance(int16 gx, int16 gy, int16 tx, int16 ty, int16 *dist)
 	int16 nx = tx, ny = ty;
 	int16 cost, d2, root;
 
-	chance += (int16)g_terr_bonus_a[from] + (int16)g_terr_bonus_b[to];
+	/* The bonus tables hold signed bytes: the release does `mov al` then
+	   `cwde`/`cbw`, so 251 is -5 and 156 is -100.  Casting them as unsigned
+	   makes the path chance huge and makes a right-click "find" any tile. */
+	chance += (int16)(int8)g_terr_bonus_a[from]
+	        + (int16)(int8)g_terr_bonus_b[to];
 
 	if ((dx | dy) > 1) {
 		if (dx != 0) {

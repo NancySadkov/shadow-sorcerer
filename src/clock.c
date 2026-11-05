@@ -13,7 +13,7 @@
 #define TIMER_STRIDE	30
 #define TIMER_N		4
 
-uint8 g_timers[4 * 30] = {
+uint8 g_timers[TIMER_N * TIMER_STRIDE] = {
 	  0,   0,   0,   0,  48,   0,   0,   0, 144,   0,   0,   0,   0,   0,   0,   0,
 	  0,   0,   0,   0,   0,   0,   2,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 	  0,   0,  48,   0,   0,   0, 144,   0,   0,   0,   0,   0,   0,   0,   0,   0,

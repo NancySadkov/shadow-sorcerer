@@ -1,0 +1,123 @@
+[
+  {
+    "slot": 1,
+    "file": "arrow_hit.wav",
+    "name": "arrow_hit",
+    "action": "ranged/arrow attack",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "SOUND_REQUEST_ATTACK = 1; by ear this is the arrow/ranged sound"
+  },
+  {
+    "slot": 2,
+    "file": "menu.wav",
+    "name": "menu",
+    "action": "menu/button click",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "by ear; swapped with slot 5"
+  },
+  {
+    "slot": 3,
+    "file": "hurt.wav",
+    "name": "hurt",
+    "action": "character/monster hurt",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "SOUND_REQUEST_MONSTER_HIT = 3; by ear a hurt sound"
+  },
+  {
+    "slot": 4,
+    "file": "death.wav",
+    "name": "death",
+    "action": "character/monster death",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "SOUND_REQUEST_DAMAGE = 4; by ear a death cry"
+  },
+  {
+    "slot": 5,
+    "file": "footstep.wav",
+    "name": "footstep",
+    "action": "party/hero movement",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "by ear; swapped with slot 2"
+  },
+  {
+    "slot": 6,
+    "file": "attack_swing.wav",
+    "name": "attack_swing",
+    "action": "melee attack/weapon swing",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "EFFECT_KIND_CLEAR_ARROWS -> g_tick_by_kind = 6; by ear a swing"
+  },
+  {
+    "slot": 7,
+    "file": "arrow_hit_plus2.wav",
+    "name": "arrow_hit_plus2",
+    "action": "+2 arrow impact",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "EFFECT_KIND_CLEAR_ARROWS_PLUS2 -> 7"
+  },
+  {
+    "slot": 8,
+    "file": "sling_stone.wav",
+    "name": "sling_stone",
+    "action": "sling stone impact",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "EFFECT_KIND_CLEAR_STONES -> 8"
+  },
+  {
+    "slot": 9,
+    "file": "fireball.wav",
+    "name": "fireball",
+    "action": "fireball / spell impact",
+    "rate": 8000,
+    "aliases": [
+      10,
+      11,
+      12
+    ],
+    "evidence": "spell/large-effect sound id 10; 9..12 share one sample"
+  },
+  {
+    "slot": 13,
+    "file": "spellcast.wav",
+    "name": "spellcast",
+    "action": "spell cast / magic",
+    "rate": 8000,
+    "aliases": [],
+    "evidence": "large-effect waveform; by ear a spell being cast"
+  },
+  {
+    "slot": 14,
+    "file": "explosion.wav",
+    "name": "explosion",
+    "action": "large explosion / huge effect",
+    "rate": 8000,
+    "aliases": [
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ],
+    "evidence": "EFFECT_KIND_MARKER/CREATURE -> 14; 14..31 share one sample"
+  }
+]

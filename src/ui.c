@@ -9,9 +9,16 @@
 
 #include <dos.h>
 #include <stdio.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "shadow.h"
 #include "game.h"
 #include "structs.h"
+#ifdef SS_SDL
+#include "ss_platform.h"
+#include "ss_sfx.h"
+#endif
 
 /* 0xD35 */
 
@@ -32,7 +39,7 @@ void draw_menubar(void)
 							/* D87-D9D */
 		accum += rec->w;			/* DA0-DA6 */
 		shadow_text(TEXT_COLOUR_HIGHLIGHT, (int16)(int16)rec->x >> 3, rec->y,
-			  (uint16)g_menubar_labels[n]);	/* DA9-DCC */
+			  SHADOW_TEXT_STR(g_menubar_labels[n]));	/* DA9-DCC */
 	}
 	sprite_draw_current(SPRITE_MENU_RULE, SPRITE_DRAW_SOLID, 0x1c, 1);			/* DC9-DDC */
 	shadow_video_page(SHADOW_PAGE_PREVIOUS);				/* DDF-DE6 */
@@ -54,28 +61,451 @@ extern int16 mouse_button_read(void);				/* 0x4A36 */
 
 /* 0x4918 */
 
-int16 message_box(int16 box_style, int16 id)
+static int16 message_box_text_ex(const char *m, int16 *close_btn)
 {
-	char *m = g_messages[id];
 	int16 w, h;
 	int16 x;
+	int16 btn;
 
-	(void)box_style;
+	btn = 0;
 	shadow_video_flags(SHADOW_BLIT_FLUSH);					/* 491E-4925 */
-	text_measure(m, &w, &h);					/* 4928-493C */
+	text_measure((char *)m, &w, &h);				/* 4928-493C */
 	x = ((SCREEN_WIDTH - (w << 3)) >> 1) / 8;			/* 493F-495A */
 	draw_text_window(x, 60, w, h);					/* 495D-496A */
 	shadow_text_draw(TEXT_COLOUR_NORMAL, x, 0x3c, m);			/* 4970-4984 */
 	while (mouse_button_read() != 0) {				/* 498A-4991 */
 	}
-	while (mouse_button_read() == 0) {				/* 4993-4998 */
-		if ((shadow_poll() & 0xff) == KEY_ESC)
+	while ((btn = mouse_button_read()) == 0) {			/* 4993-4998 */
+		if ((shadow_poll() & 0xff) == KEY_ESC) {
+			btn = 0;
 			break;
+		}
 		mouse_poll_moved(1);					/* 49A3-49AA */
 	}
+	if (close_btn != 0)
+		*close_btn = btn;
 	while (mouse_button_read() != 0) {				/* 49AF-49B6 */
 	}
 	return 0;
+}
+
+static int16 message_box_text(const char *m)
+{
+	return message_box_text_ex(m, 0);
+}
+
+int16 message_box(int16 box_style, int16 id)
+{
+	(void)box_style;
+	return message_box_text(g_messages[id]);
+}
+
+/* Port-only item descriptions.  The original data contains only item icons
+   and the magical plus values, so these names/effects are authored for the
+   port.  Lines are pre-formatted with CR; the name is centred on the first
+   row and the description block is centred below it. */
+struct item_info {
+	uint16 id;
+	const char *name;
+	const char *desc;
+};
+
+#define ITEM_DESC_MELEE		"Melee weapon."
+#define ITEM_DESC_MISSILE	"Ranged weapon."
+#define ITEM_DESC_ARMOR		"Armor."
+#define ITEM_DESC_POTION	"A healing draught."
+#define ITEM_DESC_FOOD		"Food."
+#define ITEM_DESC_TREASURE	"Treasure.\rIt can be stored in a hero's\rbackpack."
+#define ITEM_DESC_KEY		"A key.\rIt opens a matching lock."
+#define ITEM_DESC_CONTAINER	"A container.\rUse the hand menu to search it."
+#define ITEM_DESC_MAGIC		"A magic item."
+#define ITEM_DESC_ARROWS	"A bundle of arrows.\rUse it with a bow to load them."
+#define ITEM_DESC_ARROWS_2	"A bundle of +2 arrows.\rUse with a bow for +2 to hit\rand damage."
+#define ITEM_DESC_STONES	"A pouch of sling stones.\rUse it with a sling to load them."
+#define ITEM_DESC_AXE		"A throwing axe."
+#define ITEM_DESC_BOW		"Ranged weapon; needs arrows."
+#define ITEM_DESC_SPEAR		"Ranged weapon."
+#define ITEM_DESC_THROWING	"Ranged weapon."
+#define ITEM_DESC_STAFF		"Melee damage 1-8.\rRaistlin's spell staff."
+#define ITEM_DESC_SWORD		"Melee damage 1-8 (1-12 vs large)."
+#define ITEM_DESC_SWORD_A	"Melee damage 2-10 (2-14 vs large)."
+#define ITEM_DESC_SWORD_2	"Melee damage 3-12 (3-16 vs large)."
+#define ITEM_DESC_TWOHAND	"Melee damage 4-16 (6-24 vs large)."
+#define ITEM_DESC_CLUB		"Melee damage 4-13."
+#define ITEM_DESC_HOOPAK	"Melee damage 3-10.\rLoad sling stones to fire."
+#define ITEM_DESC_HOOPAK_R	"Load sling stones to fire."
+#define ITEM_DESC_HANDAXE	"Melee damage 2-10."
+#define ITEM_DESC_MACE2		"Melee damage 3-10."
+#define ITEM_DESC_THROWING_M	"Melee damage 4-14."
+#define ITEM_DESC_WYRMSLAYER	"Melee damage 4-16 (6-24 vs large).\rDouble damage vs dragons\r  and draconians."
+
+/* Descriptions are keyed by the equipped weapon icon: icon 0x03 is the
+   longbow and 0x09 the spear.  Inventory items carry the opposite ids (a bow
+   item is 0x09 and a spear item 0x03), so inventory/ground lookups translate
+   those two ids before consulting this table. */
+static const struct item_info g_item_info[] = {
+	{ 0x02, "Staff of Magi", ITEM_DESC_STAFF },
+	{ 0x03, "Longbow",	ITEM_DESC_BOW },
+	{ 0x04, "Longsword",	ITEM_DESC_SWORD },
+	{ 0x05, "Club +2",	ITEM_DESC_CLUB },
+	{ 0x06, "Hoopak",	ITEM_DESC_HOOPAK_R },
+	{ 0x07, "Hoopak +2",	ITEM_DESC_HOOPAK },
+	{ 0x08, "Two-handed sword +3", ITEM_DESC_TWOHAND },
+	{ 0x09, "Spear",	ITEM_DESC_SPEAR },
+	{ 0x0A, "Longsword +1",	ITEM_DESC_SWORD_A },
+	{ 0x0B, "Hand axe +1",	ITEM_DESC_HANDAXE },
+	{ 0x0C, "Longsword +2", ITEM_DESC_SWORD_2 },
+	{ 0x0D, "Mace +2",	ITEM_DESC_MACE2 },
+	{ 0x0E, "Arrows",	ITEM_DESC_ARROWS },
+	{ 0x0F, "Arrows +2",	ITEM_DESC_ARROWS_2 },
+	{ 0x10, "Sling stones +1", ITEM_DESC_STONES },
+	{ 0x11, "Throwing axe",	ITEM_DESC_THROWING },
+	{ 0x12, "Throwing axe +3", ITEM_DESC_THROWING_M },
+	{ 0x13, "Wyrmslayer +3", ITEM_DESC_WYRMSLAYER },
+	{ 0x14, "Boots",	ITEM_DESC_ARMOR },
+	{ 0x22, "Potion",	ITEM_DESC_POTION },
+	{ 0x23, "Chest",	ITEM_DESC_CONTAINER },
+	{ 0x25, "Web",		"A sticky web.\rIt blocks movement." },
+	{ 0x27, "Healing herbs", ITEM_DESC_POTION },
+	{ 0x28, "Wand",		ITEM_DESC_MAGIC },
+	{ 0x29, "Chain mail",	ITEM_DESC_ARMOR },
+	{ 0x2B, "Sack",		ITEM_DESC_CONTAINER },
+	{ 0x2C, "Ring",		ITEM_DESC_TREASURE },
+	{ 0x2D, "Amulet",	ITEM_DESC_TREASURE },
+	{ 0x2E, "Torch",	"A burning torch.\rIt lights the darkness." },
+	{ 0x2F, "Key",		ITEM_DESC_KEY },
+	{ 0x30, "Staff",	ITEM_DESC_MAGIC },
+	{ 0x31, "Ring",		ITEM_DESC_TREASURE },
+	{ 0x33, "Food",		ITEM_DESC_FOOD },
+	{ 0x36, "Chest",	ITEM_DESC_CONTAINER },
+	{ 0x46, "Bread",	ITEM_DESC_FOOD },
+	{ 0x47, "Herbs",	ITEM_DESC_POTION },
+	{ 0x48, "Gem",		ITEM_DESC_TREASURE },
+	{ 0x49, "Necklace",	ITEM_DESC_TREASURE },
+	{ 0x4A, "Shield",	ITEM_DESC_ARMOR },
+	{ 0x4B, "Statue",	ITEM_DESC_TREASURE },
+	{ 0x4C, "Harp",		"A finely made harp.\rIt may be needed on your quest." },
+	{ 0x51, "Ring",		ITEM_DESC_TREASURE },
+};
+
+/* Spell descriptions for the Cast menu and the spell book.  The text follows
+   the manual and the behaviour of this release (AD&D 2nd edition vintage). */
+struct spell_info {
+	uint8 level;
+	const char *name;
+	const char *desc;
+};
+
+static const struct spell_info g_mage_spell_info[8] = {
+	{ 1, "Sleep",
+	  "Sleep: weak creatures fall asleep\rwhere they stand." },
+	{ 1, "Magic Missile",
+	  "Magic Missile: a burst of magical\rforce strikes one chosen enemy." },
+	{ 1, "Detect Magic",
+	  "Detect Magic: reveals magical items,\rsecret doors and walls." },
+	{ 1, "Charm Person",
+	  "Charm Person: the enemy believes the\rcaster is a friend and stops attacking." },
+	{ 1, "Burning Hands",
+	  "Burning Hands: flame bursts from the\rwizard's hands, burning nearby foes." },
+	{ 2, "Web",
+	  "Web: a sticky barrier holds creatures\rfast. Select a target square." },
+	{ 2, "Detect Invisible",
+	  "Detect Invisible: reveals secret doors,\rhidden items and invisible creatures." },
+	{ 3, "Fireball",
+	  "Fireball: a plasma ball explodes over\ra large area, burning creatures and\rterrain. Keep allies clear." },
+};
+
+static const struct spell_info g_cleric_spell_info[11] = {
+	{ 1, "Cure Light Wounds",
+	  "Cure Light Wounds: heals 1-8 hit\rpoints. Choose a wounded hero's\rportrait." },
+	{ 1, "Protection From Evil",
+	  "Protection From Evil: hinders\rattacks by evil creatures for a time." },
+	{ 1, "Bless",
+	  "Bless: improves the attack rolls of\revery hero in the party." },
+	{ 1, "Detect Magic",
+	  "Detect Magic: reveals magical items,\rsecret doors and walls." },
+	{ 2, "Find Traps",
+	  "Find Traps: reveals mechanical traps,\rmaking them easier to disarm." },
+	{ 2, "Hold Person",
+	  "Hold Person: freezes a humanoid\rcreature in its tracks." },
+	{ 2, "Resist Fire",
+	  "Resist Fire: grants resistance to fire,\rincluding fireballs and dragon breath." },
+	{ 3, "Prayer",
+	  "Prayer: a stronger blessing that also\rprotects the party from harm." },
+	{ 3, "Dispel Magic",
+	  "Dispel Magic: destroys enemy spell\reffects, including spells in flight." },
+	{ 4, "Cure Serious Wounds",
+	  "Cure Serious Wounds: heals 2-14 hit\rpoints. Choose a wounded hero's\rportrait." },
+	{ 5, "Turn Undead",
+	  "Turn Undead: repels skeletons,\rmummies and spectres. No memorization\rneeded." },
+};
+
+static const struct spell_info *spell_info_for(int16 caster_kind, int16 spell)
+{
+	int16 id = spell;
+
+	/* Gilthanas has a four-spell subset: the fourth label is Web (id 5),
+	   not Charm (id 3). */
+	if (caster_kind == CHAR_GILTHANAS && id == 3)
+		id = 5;
+	if (caster_kind == CHAR_RAISTLIN || caster_kind == CHAR_GILTHANAS) {
+		if (id >= 0 && id < 8)
+			return &g_mage_spell_info[id];
+	} else {
+		if (id >= 0 && id < 11)
+			return &g_cleric_spell_info[id];
+	}
+	return 0;
+}
+
+/* Creature names follow the actor states used by the map data.  The sprite
+   banks are the ground truth for the two entries that the original text pool
+   and the bank order disagree on: bank J (kind 14) is the armoured knight
+   called Death Knight, while bank Q/R (kind 22, the dwarven village guardian)
+   is a dwarf.  The engine's ACTOR_KIND_DEATH_KNIGHT name is retained for the
+   kind-22 guardian because its event and neutrality rules use that value. */
+static const char *g_actor_kind_name[28] = {
+	"Baaz", "Bozak", "Kapak", "Aurak", "Sivak", "Spider",
+	"Hobgoblin", "Skeleton", "Troll", "Death Knight", "Zombie", "Wight",
+	"Ghoul", "Ghost", "Giant Wasp", "Ogre", "Aghar", "Dwarf",
+	"Golem", "Hydra", "Lizard", "Slig", "Spectral", "Dwarves",
+	"Lich", "Red Dragon", "Black Dragon", "Green Dragon"
+};
+
+void show_actor_description(int16 idx)
+{
+	struct actor_rec *a;
+	const char *name;
+	const char *desc;
+	char buf[240];
+	int16 kind;
+	int16 neutral;
+	int16 invisible;
+
+	if (idx < 0 || idx >= ACTOR_COUNT)
+		return;
+	a = &g_actor_table[idx];
+	kind = (int16)(int8)a->state;
+	if (kind < 5 || kind > 32)
+		return;
+	name = g_actor_kind_name[kind - 5];
+	neutral = actor_is_neutral(a);
+	invisible = actor_is_invisible(a);
+
+	switch (kind) {
+	case ACTOR_KIND_DWARVES:
+		desc = "Neutral mountain dwarves.\rDo not attack unless you mean it.";
+		break;
+	case ACTOR_KIND_DEATH_KNIGHT:
+		desc = "A dwarven guard of the village.\rAttacking it angers the dwarves.";
+		break;
+	case 14:
+		desc = "An undead knight, bound to\rthe world by a broken oath.";
+		break;
+	case 21:	/* Aghar */
+		desc = "Gully dwarves; usually neutral.";
+		break;
+	case ACTOR_KIND_SKELETON:
+	case ACTOR_KIND_ZOMBIE:
+	case ACTOR_KIND_WIGHT:
+	case ACTOR_KIND_GHOUL:
+	case ACTOR_KIND_GHOST:
+	case 27:	/* Spectral */
+		desc = "Undead.  It does not tire or flee.";
+		break;
+	case ACTOR_KIND_AURAK:
+		desc = "A spellcasting draconian.\rIt hides itself while it hunts.";
+		break;
+	case ACTOR_KIND_BOZAK:
+	case ACTOR_KIND_SIVAK:
+		desc = "A draconian soldier of the\r dragonarmy.";
+		break;
+	case 30: case 31: case 32:
+		desc = "A dragon.  Its breath is deadly.";
+		break;
+	default:
+		desc = "A hostile creature.";
+		break;
+	}
+
+	if (invisible)
+		sprintf(buf, "%s\r%s\r%s\rInvisible!\rUse Detect Invisible or Dispel\rMagic to reveal it before you\rattack.",
+		        name, desc,
+		        neutral ? "Neutral: attack only if provoked." : "Hostile.");
+	else if (kind == ACTOR_KIND_AURAK)
+		sprintf(buf, "%s\r%s\r%s\rIt can turn invisible; keep\rDetect Invisible ready.",
+		        name, desc,
+		        neutral ? "Neutral: attack only if provoked." : "Hostile.");
+	else
+		sprintf(buf, "%s\r%s\r%s", name, desc,
+		        neutral ? "Neutral: attack only if provoked." : "Hostile.");
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)message_box_text(buf);
+	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+}
+
+/* Equipped weapons have no site record, so their weight comes from this
+   table (the values used by the original map data for the same weapon
+   kinds).  Backpack and ground items use their actual site weight. */
+static const struct weapon_weight_info {
+	uint8 icon;
+	uint8 weight;
+} g_weapon_weight[] = {
+	{ 0x02, 8 },	/* longsword */
+	{ 0x03, 8 },	/* bow */
+	{ 0x04, 8 },	/* longsword */
+	{ 0x05, 4 },	/* club */
+	{ 0x06, 4 },	/* hoopak, ranged */
+	{ 0x07, 4 },	/* hoopak */
+	{ 0x08, 12 },	/* two-handed sword */
+	{ 0x09, 8 },	/* spear */
+	{ 0x0A, 12 },	/* longsword */
+	{ 0x0B, 5 },	/* hand axe */
+	{ 0x0C, 8 },	/* longsword +2 */
+	{ 0x0D, 1 },	/* sling +1 */
+	{ 0x11, 5 },	/* throwing axe */
+	{ 0x12, 5 },	/* throwing axe */
+	{ 0x13, 8 },	/* Wyrmslayer */
+};
+
+static int16 item_default_weight(uint16 id)
+{
+	int16 i;
+
+	if ((uint8)(id & 0xff) == 0)
+		return 0;
+	for (i = 0; i != (int16)(sizeof(g_weapon_weight) / sizeof(g_weapon_weight[0])); i++) {
+		if (g_weapon_weight[i].icon == (uint8)(id & 0xff))
+			return (int16)g_weapon_weight[i].weight;
+	}
+	return 1;
+}
+
+static int16 show_item_description(uint16 id, int16 weight, int16 actions,
+                                   int16 inventory_item)
+{
+	const char *name = "Unknown item";
+	const char *desc = "A strange object.\rIts purpose is not recorded.";
+	char namebuf[32];
+	char descbuf[192];
+	int16 i, nw, nh, dw, dh, w, h, x, y;
+	int16 count = (int16)(id >> 8);
+	int16 action = 0;
+	uint16 lookup = id;
+	struct rect_rec use_btn, drop_btn, close_btn;
+
+	/* Inventory/ground bows and spears carry the opposite id from the
+	   equipped weapon icon they raise; map them for the name lookup. */
+	if (inventory_item) {
+		if ((uint8)lookup == ACTION_USE_BOW)
+			lookup = (uint16)((lookup & 0xff00) | RANGED_WEAPON_BOW);
+		else if ((uint8)lookup == ACTION_USE_SPEAR)
+			lookup = (uint16)((lookup & 0xff00) | RANGED_WEAPON_SPEAR);
+	}
+
+	for (i = 0; i != (int16)(sizeof(g_item_info) / sizeof(g_item_info[0])); i++) {
+		if (g_item_info[i].id == (lookup & 0xff)) {
+			name = g_item_info[i].name;
+			desc = g_item_info[i].desc;
+			break;
+		}
+	}
+
+	if (count > 0 &&
+	    ((id & 0xff) == 0x0e || (id & 0xff) == 0x0f || (id & 0xff) == 0x10)) {
+		sprintf(namebuf, "%s (%d)", name, count);
+		name = namebuf;
+	}
+
+	if (weight <= 0)
+		weight = item_default_weight(id);
+	sprintf(descbuf, "%s\rWeight: %d", desc, (int)weight);
+	desc = descbuf;
+
+	text_measure((char *)name, &nw, &nh);
+	text_measure((char *)desc, &dw, &dh);
+	w = (nw > dw) ? nw : dw;
+	w += 2;
+	if (actions != 0 && w < 22)
+		w = 22;
+	h = (int16)(dh + (actions != 0 ? 5 : 3));
+	x = ((SCREEN_WIDTH - (w << 3)) >> 1) / 8;
+	y = (SCREEN_HEIGHT - (h << 3)) >> 1;
+
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)draw_text_window(x, y, w, h);
+	(void)shadow_text_draw(TEXT_COLOUR_HEADING,
+	                       x + ((w - nw) >> 1), y, name);
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL,
+	                       x + ((w - dw) >> 1), y + 16, desc);
+
+	if (actions != 0) {
+		int16 by = (int16)(y + dh * 8 + 24);
+
+		use_btn.state = 0;
+		use_btn.x = (uint16)((x + 1) << 3);
+		use_btn.y = (uint16)by;
+		use_btn.w = 24;
+		use_btn.h = 8;
+		drop_btn.state = 0;
+		drop_btn.x = (uint16)((x + 7) << 3);
+		drop_btn.y = (uint16)by;
+		drop_btn.w = 32;
+		drop_btn.h = 8;
+		close_btn.state = 0;
+		close_btn.x = (uint16)((x + w - 7) << 3);
+		close_btn.y = (uint16)by;
+		close_btn.w = 40;
+		close_btn.h = 8;
+		draw_button_caption(&use_btn, 1);
+		draw_button_caption(&drop_btn, 1);
+		draw_button_caption(&close_btn, 1);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, x + 2, by, "Use");
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, x + 8, by, "Drop");
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, x + w - 6, by,
+		                       "Close");
+	}
+
+	while (mouse_button_read() != 0) {
+#ifdef SS_SDL
+		if (actions != 0 && ss_take_double_click(1)) {
+			while (mouse_button_read() != 0)
+				;
+			action = 1;
+			goto done;
+		}
+#endif
+	}
+	while (mouse_button_read() == 0) {
+		if ((shadow_poll() & 0xff) == KEY_ESC)
+			goto done;
+		(void)mouse_poll_moved(1);
+	}
+#ifdef SS_SDL
+	if (actions != 0 && ss_take_double_click(1)) {
+		while (mouse_button_read() != 0)
+			;
+		action = 1;
+		goto done;
+	}
+#endif
+	if (actions != 0) {
+		if (rect_scan(1, (uint8 *)&use_btn) >= 0)
+			action = 1;
+		else if (rect_scan(1, (uint8 *)&drop_btn) >= 0)
+			action = 2;
+	}
+	while (mouse_button_read() != 0) {
+	}
+done:
+#ifdef SS_SDL
+	ss_restore_static_rect((int16)((x - 1) << 3), (int16)(y - 8),
+	                       (int16)((w + 2) << 3),
+	                       (int16)((h << 3) + 16));
+#endif
+	return action;
 }
 
 /* DGROUP 0xb4e */
@@ -334,21 +764,21 @@ int16 save_load_panel(int16 mode)
 	r = g_slot_rows[sel];
 	shadow_region_clear(g_text_page >> 8, r[1] >> 3, r[2], r[3] >> 3, r[4]);
 	colour = (sel == g_save_slot_highlight) ? TEXT_COLOUR_HIGHLIGHT : TEXT_COLOUR_NORMAL;		/* A372-A37F */
-	shadow_text(colour, r[1] >> 3, r[2], (uint16)g_slot_name[sel]);
+	shadow_text(colour, r[1] >> 3, r[2], SHADOW_TEXT_STR(g_slot_name[sel]));
 	}
 	draw_button_caption(RECT(g_slot_rows[10]), 2);
 
 	if (mode != 0) {
-	shadow_text(TEXT_COLOUR_NORMAL, xcells, ypos - SAVE_DIALOG_LABEL_OFFSET, (uint16)"select a game to LOAD");
+	shadow_text(TEXT_COLOUR_NORMAL, xcells, ypos - SAVE_DIALOG_LABEL_OFFSET, SHADOW_TEXT_STR("select a game to LOAD"));
 	shadow_text(TEXT_COLOUR_NORMAL, (g_slot_rows[SAVE_DIALOG_OK][1] >> 3) + 1, g_slot_rows[SAVE_DIALOG_OK][2],
-		    (uint16)"LOAD");
+		    SHADOW_TEXT_STR("LOAD"));
 	} else {
-	shadow_text(TEXT_COLOUR_NORMAL, xcells, ypos - SAVE_DIALOG_LABEL_OFFSET, (uint16)"name your SAVE game");
+	shadow_text(TEXT_COLOUR_NORMAL, xcells, ypos - SAVE_DIALOG_LABEL_OFFSET, SHADOW_TEXT_STR("name your SAVE game"));
 	shadow_text(TEXT_COLOUR_NORMAL, (g_slot_rows[SAVE_DIALOG_OK][1] >> 3) + 1, g_slot_rows[SAVE_DIALOG_OK][2],
-		    (uint16)"SAVE");
+		    SHADOW_TEXT_STR("SAVE"));
 	}
 	shadow_text(TEXT_COLOUR_NORMAL, (g_slot_rows[SAVE_DIALOG_CANCEL][1] >> 3) + 1, g_slot_rows[SAVE_DIALOG_CANCEL][2],
-	     (uint16)"CANCEL");		/* A426-A444 */
+	     SHADOW_TEXT_STR("CANCEL"));		/* A426-A444 */
 
 	events:
 	mouse_poll_moved(0);
@@ -377,7 +807,7 @@ int16 save_load_panel(int16 mode)
 	shadow_region_clear(g_text_page >> 8, r[1] >> 3, r[2], r[3] >> 3, r[4]);
 	sel = 1;
 	edit:
-	shadow_text(g_text_page, r[1] >> 3, r[2], (uint16)namep);
+	shadow_text(g_text_page, r[1] >> 3, r[2], SHADOW_TEXT_STR(namep));
 	key = shadow_getkey_noecho();
 	if (key == KEY_ENTER || key == KEY_ESC) {
 		mouse_poll_moved(0);
@@ -399,6 +829,9 @@ int16 save_load_panel(int16 mode)
 	if (fp != 0) {
 		fwrite((char *)g_name_pool, 0x19, 0xa, fp);
 		fclose(fp);
+#ifdef __EMSCRIPTEN__
+		EM_ASM({ FS.syncfs(false, function (err) { if (err) console.error('save dir sync failed', err); }); });
+#endif
 	}
 	idle:
 	goto poll;
@@ -414,11 +847,11 @@ int16 save_load_panel(int16 mode)
 	if (sel < 10 && sel != g_save_slot_highlight) {		/* A5CE-A5DA */
 		r = g_slot_rows[g_save_slot_highlight];
 		shadow_text(TEXT_COLOUR_NORMAL, r[1] >> 3, r[2],
-			    (uint16)g_slot_name[g_save_slot_highlight]);
+			    SHADOW_TEXT_STR(g_slot_name[g_save_slot_highlight]));
 		g_save_slot_highlight = sel;
 		r = g_slot_rows[g_save_slot_highlight];
 		shadow_text(TEXT_COLOUR_HIGHLIGHT, r[1] >> 3, r[2],
-			    (uint16)g_slot_name[g_save_slot_highlight]);
+			    SHADOW_TEXT_STR(g_slot_name[g_save_slot_highlight]));
 	}
 
 	if (sel == SAVE_DIALOG_CANCEL) {
@@ -713,6 +1146,150 @@ char *image_text(uint16 off)
 	return class_name_text(off);
 }
 
+/* Endgame kill-count labels: use the corrected names from the description
+   table instead of the shipped text pool for the two sprite/name mismatches
+   (kind 14 is the armoured Death Knight, kind 22 the dwarven guardian). */
+static const char *monster_display_name(int16 kind)
+{
+	switch (kind) {
+	case 14:
+		return g_actor_kind_name[14 - 5];
+	case 22:
+		return g_actor_kind_name[22 - 5];
+	default:
+		return class_name_text(g_name_offset[95 + kind - 5]);
+	}
+}
+
+/* Draw a terrain text resource with the travel time appended. */
+static void show_terrain_text(int16 id, int16 travel)
+{
+	char *p;
+	int16 len = 0;
+	int16 w, h, x, y;
+
+	text_resource_read(id);
+	p = (char *)&g_credits;
+	while (p[len] != 0)
+		len++;
+	if (len < CREDITS_BUFFER_SIZE - 32) {
+		if (travel > 0 && travel < 999)
+			sprintf(p + len, "\r\rTravel time: %d", (int)travel);
+		else
+			sprintf(p + len, "\r\rImpassable terrain.");
+	}
+
+	shadow_video_flags(SHADOW_BLIT_FLUSH);
+	text_measure(p, &w, &h);
+	x = ((SCREEN_WIDTH - (w << 3)) >> 1) / 8;
+	y = (SCREEN_HEIGHT - (h << 3)) >> 1;
+	draw_text_window(x, y, w, h);
+	shadow_text_draw(TEXT_COLOUR_NORMAL, x, y, p);
+	while (mouse_button_read() != 0)
+		;
+	while (mouse_button_read() == 0) {
+		if ((shadow_key_read() & 0xff) == KEY_ESC)
+			break;
+		mouse_poll_moved(1);
+	}
+	while (mouse_button_read() != 0)
+		;
+}
+
+/* Party/refugee records and creature behaviour are the visible entities on
+   the wilderness map. */
+static int16 world_entity_text(int16 col, int16 row, char *buf)
+{
+	int16 i;
+
+	/* Refugees and companions first: they are the entities the player is
+	   usually looking for when this hex is occupied. */
+	for (i = PARTY_REFUGEES; i != PARTY_COUNT; i++) {
+		struct party_rec *p = PARTY_REC(i);
+
+		if (p->kind == 0)
+			continue;
+		if ((int16)p->grid_x != col || (int16)p->grid_y != row)
+			continue;
+		if (i == PARTY_REFUGEES) {
+			sprintf(buf, "Refugee group.\r%d refugees are camped here.",
+			        (int)p->refugees);
+			return 1;
+		}
+		if (i >= PARTY_COMPANION_FIRST && i <= PARTY_COMPANION_LAST) {
+			sprintf(buf, "%s.\rA companion travelling with the party.",
+			        name_from_pool(g_party_name_offset[i]));
+			return 1;
+		}
+		if (i >= PARTY_FOLLOWER_LEADER && p->refugees == 0)
+			continue;
+		sprintf(buf, "Refugee group.\r%d refugees are travelling here.",
+		        (int)p->refugees);
+		return 1;
+	}
+
+	if (PARTY_REC(PARTY_MAIN)->kind != 0
+	    && (int16)PARTY_REC(PARTY_MAIN)->grid_x == col
+	    && (int16)PARTY_REC(PARTY_MAIN)->grid_y == row) {
+		sprintf(buf, "Your party.\rThe four companions are here.");
+		return 1;
+	}
+
+	{
+		int16 behavior = (int16)(g_creature_grid[col + TERRAIN_WIDTH * row]
+		                         & CREATURE_BEHAVIOUR_MASK);
+
+		if (behavior >= CREATURE_ATTACK_LIGHT
+		    && behavior <= CREATURE_ATTACK_LIGHT2) {
+			sprintf(buf, "Monsters.\rHostile creatures roam here.");
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void describe_world_hex(int16 col, int16 row, int16 travel)
+{
+	char buf[192];
+	int16 cell = (int16)(col + TERRAIN_WIDTH * row);
+
+
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+
+	if ((g_map_tile[cell] & TILE_VISIBLE) == 0) {
+		(void)message_box_text("Unexplored.\rYou have not yet surveyed this hex.");
+	} else if (world_entity_text(col, row, buf)) {
+		(void)message_box_text(buf);
+	} else if (g_walk_grid[cell] != 0) {
+		show_terrain_text((int16)g_walk_grid[cell], travel);
+	} else {
+		if (travel > 0 && travel < 999)
+			sprintf(buf, "Unremarkable terrain.\rTravel time: %d",
+			        (int)travel);
+		else
+			sprintf(buf, "Unremarkable terrain.\rImpassable.");
+		(void)message_box_text(buf);
+	}
+
+	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+}
+
+void describe_time(void)
+{
+	char buf[48];
+
+	sprintf(buf, "Day %d\rTime: %02d:%02d",
+	        (int)g_day_counter + 1, (int)g_clock_hour,
+	        (int)g_hour_ticks);
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)message_box_text(buf);
+	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+}
+
 struct character_rec *character_at(uint16 addr)
 {
 	return (struct character_rec *)((uint8 *)g_character_table + (addr - CHARACTER_TABLE_ADDR));
@@ -794,6 +1371,16 @@ void experience_points_panel(void)
 	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0x17, y, field);			/* 2E30-2E42 */
 
 	y += 12;
+#ifdef SS_SDL
+	{
+		uint32 total = ((uint32)g_acc_hi << 16) | g_acc_lo;
+		uint32 pct = (uint32)ss_score_percent();
+
+		total = (total / 100u) * pct + ((total % 100u) * pct) / 100u;
+		g_acc_lo = (uint16)(total & 0xffffu);
+		g_acc_hi = (uint16)(total >> 16);
+	}
+#endif
 	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 9, y, "Total Points");	/* 2E49-2E58 */
 	text_copy(field, "          ");					/* 2E5E-2E69 */
 	{
@@ -869,6 +1456,10 @@ void travelling_company_panel(void)
 	struct party_rec *rec;
 	int16 i;
 
+#ifdef SS_SDL
+	/* Drop the cursor overlay before the panel is drawn over it. */
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+#endif
 	draw_text_window(9, 24, 22, 5);					/* 719F-71B5 */
 	sprite_draw_dispatch(0x50, 0x24, SPRITE_STATUS_REFUGEES);		/* 71B8-71C4 */
 	sprite_draw_dispatch(0x88, 0x24, SPRITE_STATUS_FOOD);			/* 71C7-71D6 */
@@ -897,9 +1488,20 @@ void travelling_company_panel(void)
 		text_copy(field, "    ");			/* 72E4-72F2 */
 		format_uint(rec->score, &field[3]);			/* 72F5-7302 */
 		(void)shadow_text_draw(g_panel_text_attr, 0x1a, 0x28, field);	/* 7305-7318 */
+#ifdef SS_SDL
+		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+		(void)mouse_poll_moved(0);
+		while (mouse_button_read() != 0)
+			(void)mouse_poll_moved(1);				/* 731B-7322 */
+		while (mouse_button_read() == 0)
+			(void)mouse_poll_moved(1);				/* 7324-732B */
+		while (mouse_button_read() != 0)
+			(void)mouse_poll_moved(1);				/* 732D-7334 */
+#else
 		while (mouse_button_read() != 0) ;					/* 731B-7322 */
 		while (mouse_button_read() == 0) ;					/* 7324-732B */
 		while (mouse_button_read() != 0) ;					/* 732D-7334 */
+#endif
 	}
 }
 
@@ -1018,6 +1620,26 @@ char *g_label_buttons[10] = {
 	"", "", "", "", "",
 };
 
+/* The command grid follows the manual's icon order: Melee, Ranged, Cast,
+   Look, Get, Talk, Move, Group Move, Control.  Keep each line short enough
+   for a 40-column screen; draw_text_window() masks the column to 8 bits and
+   a wider string would put the box off-screen. */
+static const char *command_action_text(int16 sel)
+{
+	switch (sel) {
+	case QPANEL_HOLD: return "Melee: attack the nearest foe.";
+	case QPANEL_QUERY: return "Ranged: fire the readied weapon.";
+	case QPANEL_MENU: return "Cast: choose a spell to cast.";
+	case QPANEL_PICK: return "Look: inspect nearby items and foes.";
+	case QPANEL_USE: return "Get: take a ground item for this hero.";
+	case QPANEL_MAP_EVENT: return "Talk: speak or use the map action.";
+	case QPANEL_SELECT: return "Move: send this hero to a target.";
+	case QPANEL_GROUP_MOVE: return "Group Move: send the whole party.";
+	case QPANEL_CONTROL: return "Control: toggle computer control.";
+	default: return "Unknown action.";
+	}
+}
+
 /* 0x101F */
 
 /* 0x101F */
@@ -1091,6 +1713,35 @@ uint16 g_string_cursor;
 
 /* 0x0DED */
 
+#ifdef SS_SDL
+/* The original walks a table of 16-bit near pointers.  On a flat 64-bit build
+   a pointer array has 8-byte entries, so the two table kinds are told apart
+   explicitly (image_addrs selects 16-bit name-pool offsets). */
+int16 table_longest_string(void *items, int16 image_addrs)
+{
+	g_longest_string = 0;
+	g_string_cursor = 0;
+
+	for (;;) {
+		char *s;
+		int16 v;
+
+		if (image_addrs) {
+			uint16 *it = (uint16 *)items;
+			s = image_text(it[g_string_cursor]);
+		} else {
+			char **it = (char **)items;
+			s = it[g_string_cursor];
+		}
+		v = text_length(s);
+		if (v == 0)
+			return 0;
+		if (v > (int16)g_longest_string)
+			g_longest_string = (uint16)v;
+		++g_string_cursor;
+	}
+}
+#else
 int16 table_longest_string(uint16 *items, int16 image_addrs)
 {
 	g_longest_string = 0;
@@ -1106,6 +1757,7 @@ int16 table_longest_string(uint16 *items, int16 image_addrs)
 		++g_string_cursor;
 	}
 }
+#endif
 
 extern uint8 g_rect_menubar[50];		/* 0xB4E */
 extern int16 draw_text_window(int16 x, int16 y, int16 w, int16 h);		/* 0x4693 */
@@ -1133,12 +1785,14 @@ void menu_row(char **tab, int16 idx, int16 attr)
 int16 menu_select(int16 panel, char **labeltab, int16 flag)
 {
 	int16 width, x, y, tx, i, prev;
+	int16 menu_y;
 	uint8 *r;
 
 	(void)table_longest_string((uint16 *)labeltab, 0);			/* 5127-512D */
 	width = (int16)(int16)((uint16)g_longest_string << 3);	/* 5130-5137 */
 	x = (int16)RECT(g_rect_menubar + panel * RECT_STRIDE)->x + 8;	/* 5149-5150 */
 	y = (int16)RECT(g_rect_menubar + panel * RECT_STRIDE)->y + 8;	/* 5153-515A */
+	menu_y = y;
 
 	tx = x + width;						/* 515D-5163 */
 	if (tx > SCREEN_WIDTH) {
@@ -1163,6 +1817,11 @@ int16 menu_select(int16 panel, char **labeltab, int16 flag)
 		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, tx, (int16)RECT(r)->y,
 			labeltab[i]);		/* 51E1-51F3 */
 	}
+
+	/* Publish the whole list now.  The release's EGA shows it immediately;
+	   the port only presents on a flush, and the highlight flush below does
+	   not happen until the pointer enters a row. */
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
 
 	if (flag != 0)
 		shadow_mouse_draw((uint16)(x + (width >> 1)), 4);		/* 51FE-520E */
@@ -1192,6 +1851,13 @@ int16 menu_select(int16 panel, char **labeltab, int16 flag)
 
 	while (mouse_button_read() != 0)					/* 530E-5315 */
 		;
+#ifdef SS_SDL
+	/* Put the saved static scene back where the dropdown was, so a modal
+	   panel opened by this item does not leave menu rows on screen. */
+	ss_restore_static_rect((int16)((tx - 1) << 3), (int16)(menu_y - 8),
+	                       (int16)((g_longest_string + 2) << 3),
+	                       (int16)((g_string_cursor << 3) + 16));
+#endif
 	return i;
 }
 
@@ -1243,7 +1909,7 @@ int16 question_two_buttons(int16 res_id)
 
 	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
 	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
-	(void)draw_text_window(3, 32, 76, 7);
+	(void)draw_text_window(4, 76, 32, 7);
 
 	(void)text_resource_read(res_id);
 	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 5, 0x54, (char *)&g_credits);
@@ -1346,6 +2012,7 @@ void world_map_click(void)
 	int16 mx, row, row0, cell, kind, dist;
 	int16 off, i;
 	struct party_rec *rec;
+
 
 	if (g_overworld_phase == 2) {
 		(void)event_raise(EVENT_WORLD_MAP_DEFAULT);
@@ -1786,12 +2453,91 @@ done:
 
 extern void terminate_callback(void);				/* 0x64A3 */
 
+/* The credits live in the same buffer the text resources use, so keep a
+   private copy before the intro reads its first resource. */
+static struct credits_text ss_saved_credits;
+
+void credits_save(void)
+{
+	ss_saved_credits = g_credits;
+}
+
+/* Startup credits, now shown from Options -> About -> Credits. */
+static void show_credits_screen(void)
+{
+	int16 w, h, x, y;
+
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	text_measure((char *)&ss_saved_credits, &w, &h);
+	x = ((SCREEN_WIDTH - (w << 3)) >> 1) / 8;
+	y = (SCREEN_HEIGHT - (h << 3)) >> 1;
+	(void)draw_text_window(x, y, w, h);
+	shadow_text(TEXT_COLOUR_NORMAL, x, y, (const char *)&ss_saved_credits);
+	while (mouse_button_read() != 0) {
+	}
+	while (mouse_button_read() == 0) {
+		if ((shadow_poll() & 0xff) == KEY_ESC)
+			break;
+		(void)mouse_poll_moved(1);
+	}
+	while (mouse_button_read() != 0) {
+	}
+}
+
+/* Options -> About: version text plus a Credits button. */
+static void about_panel(void)
+{
+	struct rect_rec buttons[2];
+	int16 sel;
+
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)draw_text_window(8, 60, 23, 7);
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 9, 0x44, "   Shadow Sorceror");
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 9, 0x4c, "   Version 1.01 SDL");
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 9, 0x54, " Port by Nancy Sadkov");
+
+	RECT(&buttons[0])->state = 0;
+	RECT(&buttons[0])->x = 96;
+	RECT(&buttons[0])->y = 100;
+	RECT(&buttons[0])->w = 72;
+	RECT(&buttons[0])->h = 8;
+	RECT(&buttons[1])->state = 0;
+	RECT(&buttons[1])->x = 192;
+	RECT(&buttons[1])->y = 100;
+	RECT(&buttons[1])->w = 32;
+	RECT(&buttons[1])->h = 8;
+
+	/* Markers first, then the captions, so a marker can never cover the
+	   first letter of a label. */
+	draw_button_caption(buttons, 2);
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 12, 100, " Credits");
+	(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 24, 100, " OK");
+
+	do {
+		while (mouse_button_read() != 0) {
+		}
+		while (mouse_button_read() == 0)
+			(void)mouse_poll_moved(1);
+		sel = rect_scan(2, (uint8 *)buttons);
+	} while (sel == -1);
+	while (mouse_button_read() != 0) {
+	}
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+
+	if (sel == 0)
+		show_credits_screen();
+}
+
 /* 0x59B2 */
 
 int16 menubar_click(int16 hit, int16 mode)
 {
 	int16 id, r;
 
+#ifdef SS_SDL
+	if (hit >= 0)
+		(void)ss_sfx_play(SS_SFX_MENU);
+#endif
 	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);					/* 59B9-59C0 */
 	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);						/* 59C3-59C6 */
 
@@ -1812,7 +2558,7 @@ int16 menubar_click(int16 hit, int16 mode)
 			break;
 		switch (r) {						/* 5A96-5AA1 */
 		case OPTION_ABOUT:
-			(void)message_box(MSG_BOX_NOTICE, MSG_VERSION);				/* 5A2E-5A35 */
+			about_panel();
 			break;
 		case OPTION_REFRESH_MAP:
 			g_map_mode_char =					/* 5A3D-5A4E */
@@ -1913,7 +2659,11 @@ void high_score_show(void)
 		;
 }
 
+#ifdef SS_SDL
+extern int16 table_longest_string(void *items, int16 image_addrs);
+#else
 extern int16 table_longest_string(uint16 *items, int16 image_addrs);
+#endif
 extern void text_copy(char *dest, const char *src);
 extern void format_uint(uint16 v, char *p);
 extern int16 draw_text_window(int16 x, int16 y, int16 w, int16 h);
@@ -1929,9 +2679,34 @@ extern uint16 g_hour_ticks;					/* 0x2288 */
 
 /* 0xB101 */
 
+static int16 g_menu_caster_kind;
+static int16 g_menu_spell_count;
+static const uint8 *g_menu_spell_map;	/* display row -> real spell index */
+static uint8 g_menu_strip_level;
+
+static const char *menu_label_text(uint16 off)
+{
+	const char *s = class_name_text(off);
+
+	if (g_menu_strip_level) {
+		while (*s == ' ')
+			s++;
+		if (*s == '(') {
+			s++;
+			while (*s != 0 && *s != ')')
+				s++;
+			if (*s == ')')
+				s++;
+			while (*s == ' ')
+				s++;
+		}
+	}
+	return s;
+}
+
 int16 box_menu(uint16 *labels, uint8 *codes, int16 n, int16 quiet)
 {
-	int16 w, h, y0, x, i, y, cur, prev;
+	int16 w, h, y0, x, i, cur, prev;
 	struct rect_rec *rec;
 	char buf[4];
 
@@ -1943,73 +2718,99 @@ int16 box_menu(uint16 *labels, uint8 *codes, int16 n, int16 quiet)
 	y0 = ((int16)g_longest_string << 3) + 24;				/* B13A-B142 */
 	x = ABS_SHR3(w);						/* B145-B156 */
 
-	if (quiet == 0) {							/* B162-B166 */
-		draw_text_window(x, h, (int16)g_longest_string, (int16)g_string_cursor);		/* B168-B179 */
-		if (n != -1)
-			sprite_draw_current(SPRITE_MENU_RULE, SPRITE_DRAW_MASKED_0E, 0, h - 7);			/* B17C-B193 */
-	}
+	for (;;) {
+		int16 ry = h;
 
-	if (n != -1) {							/* B196-B19A */
-		n = n / 15;
-		y = (int16)g_clock_hour * 4 + (int16)g_hour_ticks / 15;		/* B1A8-B1B8 */
-		sprite_blit_offset(y + 0x70, h - 7 + 3, 0x53);			/* B1BB-B1D0 */
-		for (i = 0; i != n; ++i) {					/* B1D3-B1E3 */
-			sprite_blit_offset(y + 0x70, h - 7 + 3, 0x53);		/* B1E5-B1FA */
-			if (++y == CLOCK_RING_SIZE)
-				y = 0;						/* B1FD-B206 */
+		if (quiet == 0) {							/* B162-B166 */
+			draw_text_window(x, h, (int16)g_longest_string, (int16)g_string_cursor);		/* B168-B179 */
+			if (n != -1)
+				sprite_draw_current(SPRITE_MENU_RULE, SPRITE_DRAW_MASKED_0E, 0, h - 7);			/* B17C-B193 */
 		}
-	}
 
-	rec = RECT(g_menu_boxes);
-	for (i = 0; i != (int16)g_string_cursor; ++i, rec++) {		/* B20D-B226 */
-		rec->x = (uint16)w;				/* B22B-B231 */
-		rec->y = (uint16)h;				/* B234-B23A */
-		rec->w = (uint16)y0;				/* B23D-B243 */
-		rec->h = 8;						/* B246-B249 */
-		h += 8;
+		if (n != -1) {							/* B196-B19A */
+			int16 ring = n / 15;
+			int16 ry2 = (int16)g_clock_hour * 4 + (int16)g_hour_ticks / 15;		/* B1A8-B1B8 */
+			sprite_blit_offset(ry2 + 0x70, h - 7 + 3, 0x53);			/* B1BB-B1D0 */
+			for (i = 0; i != ring; ++i) {					/* B1D3-B1E3 */
+				sprite_blit_offset(ry2 + 0x70, h - 7 + 3, 0x53);		/* B1E5-B1FA */
+				if (++ry2 == CLOCK_RING_SIZE)
+					ry2 = 0;						/* B1FD-B206 */
+			}
+		}
 
-		shadow_text_draw(TEXT_COLOUR_NORMAL, x, rec->y,
-		                 class_name_text(labels[i]));	/* B252-B26C */
+		rec = RECT(g_menu_boxes);
+		for (i = 0; i != (int16)g_string_cursor; ++i, rec++) {		/* B20D-B226 */
+			rec->x = (uint16)w;				/* B22B-B231 */
+			rec->y = (uint16)ry;				/* B234-B23A */
+			rec->w = (uint16)y0;				/* B23D-B243 */
+			rec->h = 8;						/* B246-B249 */
+			ry += 8;
 
-		text_copy(buf, "  ");
-		format_uint((uint16)(int8)codes[i], buf + 1);	/* B27D-B28E */
-		shadow_text_draw((int16)g_vote_text_attr, x, rec->y, buf);	/* B291-B2A5 */
-	}
+			shadow_text_draw(TEXT_COLOUR_NORMAL,
+			                 (int16)(x + (g_menu_strip_level ? 3 : 0)),
+			                 rec->y, menu_label_text(labels[i]));	/* B252-B26C */
 
-	cur = -1;								/* B2AB-B2B1 */
-	prev = -1;
-	mouse_poll_moved(0);								/* B2B4-B2BA */
+			text_copy(buf, "  ");
+			format_uint((uint16)(int8)codes[i], buf + 1);	/* B27D-B28E */
+			shadow_text_draw((int16)g_vote_text_attr, x, rec->y, buf);	/* B291-B2A5 */
+		}
 
-	while (mouse_button_read() == 0) {						/* B2BD-B2C4 */
-		mouse_poll_moved(1);							/* B2C7-B2CE */
-		if ((uint8)shadow_key_read() == KEY_ESC)				/* B2D1-B2DB */
+		cur = -1;								/* B2AB-B2B1 */
+		prev = -1;
+		mouse_poll_moved(0);								/* B2B4-B2BA */
+
+		while (mouse_button_read() == 0) {						/* B2BD-B2C4 */
+			mouse_poll_moved(1);							/* B2C7-B2CE */
+			if ((uint8)shadow_key_read() == KEY_ESC)				/* B2D1-B2DB */
+				return -1;
+			cur = rect_scan((int16)g_string_cursor, g_menu_boxes);		/* B2DE-B2EC */
+
+			if (cur != prev) {						/* B2F2-B2F7 */
+				shadow_video_flags(SHADOW_BLIT_FLUSH);					/* B2FA-B301 */
+				if (cur != -1) {					/* B304-B308 */
+					rec = RECT(g_menu_boxes + cur * RECT_STRIDE);		/* B30A-B31A */
+					shadow_text_draw(TEXT_COLOUR_HIGHLIGHT,
+					    (int16)(ABS_SHR3((int16)(int16)rec->x)
+					            + (g_menu_strip_level ? 3 : 0)),
+					    rec->y, menu_label_text(labels[cur]));	/* B31D-B344 */
+				}
+				if (prev != -1) {					/* B347-B34B */
+					rec = RECT(g_menu_boxes + prev * RECT_STRIDE);		/* B34D-B35D */
+					shadow_text_draw(TEXT_COLOUR_NORMAL,
+					    (int16)(ABS_SHR3((int16)(int16)rec->x)
+					            + (g_menu_strip_level ? 3 : 0)),
+					    rec->y, menu_label_text(labels[prev]));	/* B360-B387 */
+				}
+				mouse_poll_moved(0);						/* B38A-B390 */
+			}
+			prev = cur;								/* B393-B396 */
+		}
+
+		if ((mouse_button_read() & 2) != 0) {					/* B39C-B3A3 */
+			int16 row = rect_scan((int16)g_string_cursor, g_menu_boxes);
+
+			while (mouse_button_read() != 0)				/* B3A8-B3AF */
+				;
+			if (g_menu_spell_count != 0 && row >= 0
+			    && row < g_menu_spell_count) {
+				const struct spell_info *si =
+				    spell_info_for(g_menu_caster_kind,
+				                   g_menu_spell_map != 0
+				                   ? (int16)g_menu_spell_map[row] : row);
+
+				if (si != 0) {
+					(void)message_box_text(si->desc);
+					continue;
+				}
+			}
 			return -1;
-		cur = rect_scan((int16)g_string_cursor, g_menu_boxes);		/* B2DE-B2EC */
-
-		if (cur != prev) {						/* B2F2-B2F7 */
-			shadow_video_flags(SHADOW_BLIT_FLUSH);					/* B2FA-B301 */
-			if (cur != -1) {					/* B304-B308 */
-				rec = RECT(g_menu_boxes + cur * RECT_STRIDE);		/* B30A-B31A */
-				shadow_text_draw(TEXT_COLOUR_HIGHLIGHT,
-				    ABS_SHR3((int16)(int16)rec->x),
-				    rec->y, class_name_text(labels[cur]));	/* B31D-B344 */
-			}
-			if (prev != -1) {					/* B347-B34B */
-				rec = RECT(g_menu_boxes + prev * RECT_STRIDE);		/* B34D-B35D */
-				shadow_text_draw(TEXT_COLOUR_NORMAL,
-				    ABS_SHR3((int16)(int16)rec->x),
-				    rec->y, class_name_text(labels[prev]));	/* B360-B387 */
-			}
-			mouse_poll_moved(0);						/* B38A-B390 */
 		}
-		prev = cur;								/* B393-B396 */
-	}
 
-	if (mouse_button_read() & 2)							/* B39C-B3A3 */
-		cur = -1;
-	while (mouse_button_read() != 0)							/* B3A8-B3AF */
-		;
-	return cur;
+		cur = rect_scan((int16)g_string_cursor, g_menu_boxes);
+		while (mouse_button_read() != 0)					/* B3A8-B3AF */
+			;
+		return cur;
+	}
 }
 
 /* 0x130E */
@@ -2039,6 +2840,517 @@ extern int16 word_xor(int16 a, int16 b);
 extern int16 box_menu(uint16 *labels, uint8 *codes, int16 n, int16 quiet);
 extern void shadow_mouse_draw(uint16 a, uint16 b);
 
+#ifdef SS_SDL
+/* Move an equipped weapon back into the hero's backpack.  The active slot
+   stores the icon; the backpack entry keeps that icon in its low byte and a
+   direction marker in its high byte.  The marker tells the equip path to
+   restore this exact icon instead of following the original item action,
+   whose bow/spear ids are swapped. */
+static int16 unequip_weapon(int16 slot, int16 ranged)
+{
+	struct character_rec *rc;
+	struct weapon_slot *w;
+	uint8 icon;
+	int16 i, kind;
+	uint16 marker;
+
+	kind = (int16)(uint8)g_hero_slots[slot].state;
+	if (kind > HERO_SLOT_STATE_LIMIT)
+		return 0;
+	rc = CHAR_REC(character_at(g_record_addr[kind]));
+	w = ranged ? &rc->ranged_weapon : &rc->hand_weapon;
+	icon = w->icon;
+	if (icon == 0)
+		return 0;
+	marker = ranged ? SS_ITEM_RANGED_MARKER : SS_ITEM_HAND_MARKER;
+	for (i = 0; i != SITE_COUNT; i++) {
+		struct site_rec *s = &g_site_table[i];
+
+		if (s->id != 0)
+			continue;
+		s->id = (uint16)icon | marker;
+		s->map = (uint16)kind;
+		s->x = 0;
+		s->y = 0;
+		s->mode_value = 0;
+		s->weight = (uint16)item_default_weight(icon);
+		s->child = 0;
+		s->flags = 0x82;
+		WEAPON_WORD(*w) = 0;
+		return 1;
+	}
+	return 0;
+}
+#endif
+
+#ifdef SS_SDL
+extern const uint16 g_kind_ceiling[23];
+
+/* Current load includes backpack contents and both ready weapons. */
+static int16 hero_carried_weight(int16 kind, struct character_rec *rec)
+{
+	int16 count = 0;
+	uint16 total;
+
+	g_search_weight = 0;
+	collect_matching_sites(&count, kind, 2, 0, 0);
+	total = g_search_weight;
+	total = (uint16)(total + (uint16)item_default_weight(rec->hand_weapon.icon));
+	total = (uint16)(total + (uint16)item_default_weight(rec->ranged_weapon.icon));
+	return (int16)total;
+}
+#endif
+
+#ifdef SS_SDL
+static const char *character_class_name(char cls, int16 armor_type)
+{
+	switch (cls) {
+	case 'F': return "Fighter";
+	case 'C': return "Cleric";
+	case 'M': return "Mage";
+	case 'T': return "Thief";
+	case 'R': return "Ranger";
+	default:
+		break;
+	}
+	switch (armor_type) {
+	case 0: return "Cleric";
+	case 2: return "Fighter";
+	case 3: return "Mage";
+	case 4: return "Thief";
+	default: return "Adventurer";
+	}
+}
+
+/* The name string ends in the cosmetic "<level><class>" tag, e.g.
+   "Raistlin 7M"; the real character level lives in rec->level. */
+static void character_title(struct character_rec *rec, char *buf)
+{
+	const char *start = CHARACTER_NAME(rec);
+	const char *p;
+	const char *last = 0;
+	const char *tok;
+	char cls = 0;
+	int16 base_len;
+
+	while (*start == ' ')
+		start++;
+	for (p = start; *p != 0; p++) {
+		if (*p == ' ')
+			last = p;
+	}
+	if (last != 0) {
+		base_len = (int16)(last - start);
+		tok = last + 1;
+		while (*tok >= '0' && *tok <= '9')
+			tok++;
+		if (*tok != 0)
+			cls = *tok;
+	} else {
+		for (base_len = 0; start[base_len] != 0; base_len++)
+			;
+	}
+	sprintf(buf, "%.*s, Lv.%d %s", (int)base_len, start,
+	        (int)rec->level,
+	        character_class_name(cls, (int16)rec->armor_type));
+}
+
+/* shadow_region_clear rounds its origin down to an 8-pixel cell, which
+   breaks rectangles that do not start on a cell boundary. */
+static void fill_rect_px(int16 x, int16 y, int16 w, int16 h, uint8 colour)
+{
+	int16 i;
+
+	for (i = 0; i != w; i++)
+		(void)shadow_rect_fill((uint16)(x + i), (uint16)y,
+		                       (uint16)colour, (uint16)h);
+}
+
+/* Default combat orders live in their own AI sub-dialogue so the Character
+   View only has to show the character sheet, weapons and weight. */
+static void character_ai_panel(int16 slot)
+{
+	struct character_rec *rec;
+	struct rect_rec rows[4];
+	struct rect_rec close_rec;
+	int16 kind, i, sel, v, count;
+
+	kind = (int16)(uint8)g_hero_slots[slot].state;
+	if (kind > HERO_SLOT_STATE_LIMIT)
+		return;
+	rec = CHAR_REC(character_at(g_record_addr[kind]));
+	count = (kind == CHAR_GOLMOON || kind == CHAR_RAISTLIN ||
+	         kind == CHAR_GILTHANAS || kind == CHAR_ELISTAN) ? 4 : 3;
+
+	while (mouse_button_read() != 0)
+		;
+
+	for (;;) {
+		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+		(void)draw_text_window(4, 48, 32, 14);
+		(void)shadow_text_draw(TEXT_COLOUR_HEADING, 15, 0x38,
+		                       "AI Defaults");
+
+		for (i = 0; i != count; i++) {
+			rows[i].state = 0;
+			rows[i].x = 93;
+			rows[i].y = (uint16)(72 + i * 10);
+			rows[i].w = 16;
+			rows[i].h = 8;
+			v = (int16)(int8)g_order_masks[i]
+			    & (int16)(int8)rec->orders;
+			draw_glyph_wait(&rows[i], v != 0);
+			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 13,
+			                       (int16)(72 + i * 10),
+			                       g_label_buttons[i]);
+		}
+
+		close_rec.state = 0;
+		close_rec.x = 200;
+		close_rec.y = 150;
+		close_rec.w = 48;
+		close_rec.h = 8;
+		draw_button_caption(&close_rec, 1);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 26, 150, "Close");
+
+		while (mouse_button_read() == 0) {
+			(void)mouse_poll_moved(1);
+			if ((shadow_key_read() & 0xff) == KEY_ESC)
+				return;
+		}
+		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+
+		if (rect_scan(1, (uint8 *)&close_rec) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			return;
+		}
+
+		sel = rect_scan(count, (uint8 *)rows);
+		if (sel >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			rec->orders = (uint8)(rec->orders
+			    ^ g_order_masks[sel]);
+			continue;
+		}
+
+		while (mouse_button_read() != 0)
+			;
+	}
+}
+#endif
+
+/* Memorize opens this spell book instead of the old flat list.  Each level
+   has caps[level] slots; the slot rows show how many are filled, and the
+   arrow buttons (the same scroll-arrow sprites as the ground-item panel)
+   switch levels.  Clicking a slot lists the known spells of that level. */
+static const char *spell_book_name(uint16 off)
+{
+	const char *s = class_name_text(off);
+
+	while (*s == ' ')
+		s++;
+	if (*s == '(') {
+		s++;
+		while (*s != 0 && *s != ')')
+			s++;
+		if (*s == ')')
+			s++;
+		while (*s == ' ')
+			s++;
+	}
+	return s;
+}
+
+static int16 spell_book_level_known(uint16 *labels, const uint8 *levels,
+                                    int16 level, int16 *out)
+{
+	int16 i, n = 0;
+
+	for (i = 0; i != 12; i++) {
+		if (labels[i] == 0)
+			break;
+		if ((int16)levels[i] == level)
+			out[n++] = i;
+	}
+	return n;
+}
+static int16 spell_book_level_used(uint8 *counts, const uint8 *levels,
+                                   int16 level)
+{
+	int16 i, n = 0;
+
+	for (i = 0; i != 12; i++) {
+		if (levels[i] == 0)
+			break;
+		if ((int16)levels[i] == level)
+			n += (int16)counts[i];
+	}
+	return n;
+}
+
+static int16 spell_book_fill_slots(uint8 *counts, const uint8 *levels,
+                                   int16 level, int16 cap, int16 *out)
+{
+	int16 i, k, n = 0;
+
+	for (i = 0; i != 12 && n < cap; i++) {
+		if (levels[i] == 0)
+			break;
+		if ((int16)levels[i] != level)
+			continue;
+		for (k = 0; k != (int16)counts[i] && n < cap; k++)
+			out[n++] = i;
+	}
+	return n;
+}
+
+static void spell_book_panel(uint16 *labels, uint8 *counts,
+                             const uint8 *levels, const uint8 *caps,
+                             uint16 *time_debt, int16 caster_kind)
+{
+	int16 level = 0;
+	int16 max_level = 1;
+	int16 list_mode = 0;
+	int16 pending = -1;
+	int16 i;
+
+	for (i = 1; i != 6; i++) {
+		if (caps[i] != 0) {
+			if (level == 0)
+				level = i;
+			max_level = i;
+		}
+	}
+	if (level == 0)
+		level = max_level;
+
+	for (;;) {
+		struct rect_rec left_arrow, right_arrow, close_btn, back_btn;
+		struct rect_rec slot_rows[6], spell_rows[8];
+		int16 slot_spell[6], known[12];
+		int16 cap, used, filled, known_count, esc;
+		char buf[48];
+
+		cap = (int16)caps[level];
+		if (cap < 1)
+			cap = 1;
+		if (cap > 6)
+			cap = 6;
+		used = spell_book_level_used(counts, levels, level);
+		filled = spell_book_fill_slots(counts, levels, level, cap, slot_spell);
+		known_count = spell_book_level_known(labels, levels, level, known);
+		if (known_count > 8)
+			known_count = 8;
+
+		(void)draw_text_window(4, 48, 32, 14);
+		(void)shadow_text_draw(TEXT_COLOUR_HEADING, 15, 56, "Spell Book");
+
+		left_arrow.state = 0;
+		left_arrow.x = 80;
+		left_arrow.y = 68;
+		left_arrow.w = 16;
+		left_arrow.h = 16;
+		right_arrow.state = 0;
+		right_arrow.x = 176;
+		right_arrow.y = 68;
+		right_arrow.w = 16;
+		right_arrow.h = 16;
+		(void)sprite_draw_current(SPRITE_SCROLL_ARROW_BASE + 1,
+		                         SPRITE_DRAW_SOLID, 10, 68);
+		(void)sprite_draw_current(SPRITE_SCROLL_ARROW_BASE + 2,
+		                         SPRITE_DRAW_SOLID, 22, 68);
+		sprintf(buf, "Lv. %d", (int)level);
+		(void)shadow_text_draw(TEXT_COLOUR_HIGHLIGHT, 16, 70, buf);
+		sprintf(buf, "Slots: %d/%d", (int)used, (int)cap);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 14, 78, buf);
+
+		close_btn.state = 0;
+		close_btn.x = 200;
+		close_btn.y = 148;
+		close_btn.w = 48;
+		close_btn.h = 8;
+		draw_button_caption(&close_btn, 1);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 26, 148, "Close");
+
+		if (!list_mode) {
+			for (i = 0; i != cap; i++) {
+				int16 row = (int16)(86 + i * 10);
+
+				slot_rows[i].state = 0;
+				slot_rows[i].x = 96;
+				slot_rows[i].y = (uint16)(row - 1);
+				slot_rows[i].w = 160;
+				slot_rows[i].h = 9;
+				if (i < filled) {
+					sprintf(buf, "%d. %s", (int)(i + 1),
+					        spell_book_name(labels[slot_spell[i]]));
+					(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 13, row,
+					                       buf);
+				} else {
+					sprintf(buf, "%d. - empty -", (int)(i + 1));
+					(void)shadow_text_draw(TEXT_COLOUR_DIM, 13, row,
+					                       buf);
+				}
+			}
+		} else {
+			(void)shadow_text_draw(TEXT_COLOUR_HEADING, 13, 86,
+			                       "Choose a spell:");
+			for (i = 0; i != known_count && i != 8; i++) {
+				int16 row = (int16)(96 + i * 10);
+
+				spell_rows[i].state = 0;
+				spell_rows[i].x = 96;
+				spell_rows[i].y = (uint16)(row - 1);
+				spell_rows[i].w = 160;
+				spell_rows[i].h = 9;
+				sprintf(buf, "%s  (%d)",
+				        spell_book_name(labels[known[i]]),
+				        (int)counts[known[i]]);
+				(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 13, row,
+				                       buf);
+			}
+			if (known_count == 0)
+				(void)shadow_text_draw(TEXT_COLOUR_DIM, 13, 96,
+				                       "(none at this level)");
+			back_btn.state = 0;
+			back_btn.x = 96;
+			back_btn.y = 148;
+			back_btn.w = 48;
+			back_btn.h = 8;
+			draw_button_caption(&back_btn, 1);
+			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 13, 148, "Back");
+		}
+
+		esc = 0;
+		while (mouse_button_read() == 0) {
+			(void)mouse_poll_moved(1);
+			if ((shadow_key_read() & 0xff) == KEY_ESC) {
+				esc = 1;
+				break;
+			}
+		}
+		if (esc) {
+			if (list_mode) {
+				list_mode = 0;
+				pending = -1;
+				continue;
+			}
+			return;
+		}
+
+		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+		if ((mouse_button_read() & 2) != 0) {
+			int16 row = list_mode
+			            ? rect_scan(known_count, (uint8 *)spell_rows)
+			            : rect_scan(cap, (uint8 *)slot_rows);
+
+			while (mouse_button_read() != 0)
+				;
+			if (list_mode) {
+				if (row >= 0) {
+					const struct spell_info *si =
+					    spell_info_for(caster_kind, known[row]);
+
+					if (si != 0) {
+						(void)message_box_text(si->desc);
+						continue;
+					}
+				}
+				list_mode = 0;
+				pending = -1;
+				continue;
+			}
+			if (row >= 0 && row < filled) {
+				const struct spell_info *si =
+				    spell_info_for(caster_kind, slot_spell[row]);
+
+				if (si != 0) {
+					(void)message_box_text(si->desc);
+					continue;
+				}
+			}
+			if (row >= 0)
+				continue;
+			return;
+		}
+
+		if (list_mode) {
+			int16 pick;
+
+			if (rect_scan(1, (uint8 *)&back_btn) >= 0) {
+				while (mouse_button_read() != 0)
+					;
+				list_mode = 0;
+				pending = -1;
+				continue;
+			}
+			if (rect_scan(1, (uint8 *)&close_btn) >= 0) {
+				while (mouse_button_read() != 0)
+					;
+				return;
+			}
+			pick = rect_scan(known_count, (uint8 *)spell_rows);
+			if (pick >= 0) {
+				int16 chosen = known[pick];
+				int16 old = (pending >= 0 && pending < filled)
+				            ? slot_spell[pending] : -1;
+
+				while (mouse_button_read() != 0)
+					;
+				if (old < 0 && used >= cap) {
+					list_mode = 0;
+					pending = -1;
+					continue;
+				}
+				if (chosen != old) {
+					if (old >= 0 && counts[old] != 0)
+						counts[old]--;
+					counts[chosen]++;
+					*time_debt += (uint16)(level * 15);
+				}
+				list_mode = 0;
+				pending = -1;
+			}
+			while (mouse_button_read() != 0)
+				;
+			continue;
+		}
+
+		if (rect_scan(1, (uint8 *)&close_btn) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			return;
+		}
+		if (rect_scan(1, (uint8 *)&left_arrow) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			level = (int16)((level <= 1) ? max_level : level - 1);
+			list_mode = 0;
+			pending = -1;
+			continue;
+		}
+		if (rect_scan(1, (uint8 *)&right_arrow) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			level = (int16)((level >= max_level) ? 1 : level + 1);
+			list_mode = 0;
+			pending = -1;
+			continue;
+		}
+		pending = rect_scan(cap, (uint8 *)slot_rows);
+		if (pending >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			list_mode = 1;
+			continue;
+		}
+		while (mouse_button_read() != 0)
+			;
+	}
+}
+
 /* 0x130E */
 int16 character_detail_panel(int16 a, int16 b, int16 c)
 {
@@ -2047,8 +3359,15 @@ int16 character_detail_panel(int16 a, int16 b, int16 c)
 	const uint8 *plbl, *p2;
 	uint16 *labels, *pw;
 	uint8 scr[16];
-	int16 kind, i, k, v, n, sel, res, rows, count, changed, flag;
+	char title[48];
+	int16 kind, i, v, n, sel, flag;
+	int16 tw, th;
+	int16 inv_count, inv_page = 0;
+	struct site_rec *inv_rec;
+	struct rect_rec close_btn, ai_btn;
+	struct rect_rec inv_left, inv_right, inv_slot[5];
 
+redraw:
 	kind = (int16)(int16)g_hero_slots[a].state;
 	labels = 0;
 	p8 = 0;
@@ -2065,35 +3384,30 @@ int16 character_detail_panel(int16 a, int16 b, int16 c)
 
 	if (b == 0) {
 		(void)draw_text_window(4, 48, 32, 14);
-		(void)shadow_text_draw(TEXT_COLOUR_HEADING, 0xa, 0x30,
-		               CHARACTER_NAME(rec));
-		for (i = 0; i != 10; i++) {
-			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, ((i & 1) ? 0x10 : 0) + 5,
-			               ((i >> 1) * 8) + 0x3e,
-			               class_name_text(P_NAME(i)));
+		character_title(rec, title);
+		text_measure(title, &tw, &th);
+		(void)shadow_text_draw(TEXT_COLOUR_HEADING,
+		               4 + ((32 - tw) >> 1), 0x30, title);
+		for (i = 0; i != 6; i++) {
+			int16 col = (i & 1) ? 0x15 : 5;
+			int16 row = (int16)(((i >> 1) * 8) + 0x46);
+
+			sprintf((char *)scr, "%d",
+			        (int)(int8)rec->stats.attributes[i]);
+			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, col, row,
+			                       class_name_text(P_NAME(i + 2)));
+			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, col + 5, row,
+			                       (char *)scr);
 		}
-		p8 = rec->stats.attributes;
-		for (i = 0; i != 6; i++)
-			(void)draw_status_bar((int16)(int8)*p8++,
-			               (i & 1) ? 24 : 8,
-			               ((i >> 1) * 8) + 0x46);
-		text_copy((char *)scr, "     ");
 		v = (int16)rec->stats.armor_class;
-		if (v < 0) {
-			v = -v;
-			scr[1] = '-';
-		}
-		format_uint((uint16)v, (char *)(scr + 3));
+		if (v < 0)
+			sprintf((char *)scr, "-%d", -v);
+		else
+			sprintf((char *)scr, "%d", v);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 21, 0x5e, "AC");
 		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 24, 0x5e, (char *)scr);
-		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 8, 0x5e,
-		               "          ");
-		text_copy((char *)scr, "     /    ");
-		if (kind != HERO_SLOT_NONE) {
-			format_uint((uint16)rec->hp,
-			        (char *)(scr + 3));
-			format_uint((uint16)rec->hp_max,
-			        (char *)(scr + 9));
-		}
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 5, 0x5e, "HP");
+		sprintf((char *)scr, "%d/%d", (int)rec->hp, (int)rec->hp_max);
 		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 8, 0x5e, (char *)scr);
 		n = rec->hand_weapon.icon;
 		if (n != 0) {
@@ -2102,23 +3416,99 @@ int16 character_detail_panel(int16 a, int16 b, int16 c)
 			               class_name_text(P_STR(n)));
 		}
 		n = rec->ranged_weapon.icon;
-		if (n == 6)
-			n++;
-		if (n != 0) {
-			sprite_blit_offset(0x78, 0x72, n);
-			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0x11, 0x6e,
-			               class_name_text(P_STR(n)));
-			if (n == 3 && rec->action_timer != 0) {
-				text_copy((char *)scr, "     ");
-				format_uint((uint16)(int16)rec->action_timer,
-				        (char *)(scr + 3));
-				(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0xf, 0x6b, (char *)scr);
-				if (rec->action_code == ACTION_PAIR_IF_MODE3_0F)
+		{
+			int16 ranged_icon = n;
+
+			if (n == 6)
+				n++;
+			if (n != 0) {
+				sprite_blit_offset(0x78, 0x72, n);
+				(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0x11, 0x6e,
+				               class_name_text(P_STR(n)));
+			}
+			if (ranged_icon == RANGED_WEAPON_BOW) {
+				int16 ammo = 0;
+
+				if (rec->action_code == ACTION_LOAD_BOW_ARROWS ||
+				    rec->action_code == ACTION_LOAD_BOW_ARROWS_PLUS2)
+					ammo = (int16)(int8)rec->action_timer;
+				if (ammo > 0)
+					sprintf((char *)scr, "%d ammo", (int)ammo);
+				else
+					sprintf((char *)scr, "0 ammo");
+				(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0x10, 0x6b,
+				               (char *)scr);
+				if (rec->action_code == ACTION_LOAD_BOW_ARROWS_PLUS2)
 					(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 0x11, 0x73,
 					               "+2");
 			}
 		}
-		(void)shadow_text_draw(TEXT_COLOUR_HEADING, 5, 0x86, "Defaults");
+		/* Carried items: five black slots between two arrow buttons. */
+		inv_count = 0;
+		collect_matching_sites(&inv_count, kind, 2, 0, 0);
+		if (inv_count <= 0)
+			inv_page = 0;
+		else if (inv_page >= inv_count)
+			inv_page = (int16)(((inv_count - 1) / 5) * 5);
+		if (inv_page < 0)
+			inv_page = 0;
+
+		(void)shadow_region_clear(0, 5, 0x7e, 18, 4);
+		for (i = 0; i != 5; i++) {
+			int16 sx = (int16)(64 + i * 18);
+			int16 idx = (int16)(inv_page + i);
+			uint8 edge = 8;
+
+			inv_slot[i].state = 0;
+			inv_slot[i].x = (uint16)sx;
+			inv_slot[i].y = 132;
+			inv_slot[i].w = 16;
+			inv_slot[i].h = 16;
+			fill_rect_px(sx, 132, 16, 16, 0);
+			if (idx < inv_count) {
+				inv_rec = &g_site_table[(int16)(int8)
+				          g_matching_site_list[idx]];
+				sprite_blit_offset((int16)(sx + 12), 140,
+				                   (int16)SITE_KIND(inv_rec));
+			}
+			/* Outline last so wide item icons cannot eat the border. */
+			fill_rect_px(sx, 132, 16, 1, edge);
+			fill_rect_px(sx, 147, 16, 1, edge);
+			fill_rect_px(sx, 132, 1, 16, edge);
+			fill_rect_px((int16)(sx + 15), 132, 1, 16, edge);
+		}
+
+		(void)shadow_text_draw(TEXT_COLOUR_HIGHLIGHT, 6, 0x86, "<");
+		(void)shadow_text_draw(TEXT_COLOUR_HIGHLIGHT, 20, 0x86, ">");
+		sprintf((char *)scr, "Wt %d/%d",
+		        (int)hero_carried_weight(kind, rec),
+		        (int)g_kind_ceiling[kind]);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 5, 0x96, (char *)scr);
+		inv_left.state = 0;
+		inv_left.x = 44;
+		inv_left.y = 132;
+		inv_left.w = 20;
+		inv_left.h = 12;
+		inv_right.state = 0;
+		inv_right.x = 154;
+		inv_right.y = 132;
+		inv_right.w = 22;
+		inv_right.h = 12;
+
+		ai_btn.state = 0;
+		ai_btn.x = 200;
+		ai_btn.y = 0x86;
+		ai_btn.w = 40;
+		ai_btn.h = 8;
+		draw_button_caption(&ai_btn, 1);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 26, 0x86, "AI");
+		close_btn.state = 0;
+		close_btn.x = 200;
+		close_btn.y = 150;
+		close_btn.w = 48;
+		close_btn.h = 8;
+		draw_button_caption(&close_btn, 1);
+		(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 26, 150, "Close");
 	}
 
 	switch (kind) {
@@ -2151,10 +3541,14 @@ int16 character_detail_panel(int16 a, int16 b, int16 c)
 	}
 
 	if (b == 0) {
-		count = (labels != 0) ? 5 : 3;
-		rows = (labels != 0) ? 4 : 3;
-		draw_combat_menu(count, MENU_SELECTION_NONE);
-		draw_button_caption(RECT(g_btn_table), count);
+		if (labels != 0) {
+			struct rect_rec *mem = RECT(g_btn_table
+			                            + 4 * RECT_STRIDE);
+
+			draw_button_caption(mem, 1);
+			(void)shadow_text_draw(TEXT_COLOUR_NORMAL, 26, 110,
+			                       "Memorize");
+		}
 	}
 	while (mouse_button_read() != 0)
 		;
@@ -2167,12 +3561,6 @@ more:
 	if (b != 0) {
 		sel = 4;
 	} else {
-		for (sel = 0; sel != rows; sel++) {
-
-			v = (int16)(int8)g_order_masks[sel]
-			    & (int16)(int8)rec->orders;
-			draw_glyph_wait(RECT(g_btn_table + (uint16)(sel * RECT_STRIDE)), v != 0);
-		}
 		while (mouse_button_read() == 0) {
 			(void)mouse_poll_moved(1);
 			if ((shadow_key_read() & 0xff) == KEY_ESC) {
@@ -2181,25 +3569,115 @@ more:
 			}
 		}
 		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
-		sel = rect_scan(count, g_btn_table);
+		/* Left-clicking outside the character sheet closes it. */
+		if ((mouse_button_read() & 1) != 0 &&
+		    (g_mouse_x < 32 || g_mouse_x >= 288 ||
+		     g_mouse_y < 48 || g_mouse_y >= 160)) {
+			while (mouse_button_read() != 0)
+				;
+			goto finish;
+		}
+		/* Weapon icons: left click unequips into the backpack, right click
+		   shows the weapon's description. */
+		if (mouse_button_read() != 0) {
+			int16 btn = mouse_button_read();
+			int16 which = -1;
+
+			if (g_mouse_x >= 0x38 && g_mouse_x < 0x58 &&
+			    g_mouse_y >= 0x68 && g_mouse_y < 0x80)
+				which = 0;
+			else if (g_mouse_x >= 0x68 && g_mouse_x < 0x88 &&
+			         g_mouse_y >= 0x68 && g_mouse_y < 0x80)
+				which = 1;
+			if (which >= 0) {
+				uint8 icon = which ? rec->ranged_weapon.icon
+				                   : rec->hand_weapon.icon;
+
+				while (mouse_button_read() != 0)
+					;
+				if ((btn & 2) != 0) {
+					if (icon != 0)
+						show_item_description((uint16)icon,
+						    item_default_weight(icon), 0, 0);
+				} else {
+					(void)unequip_weapon(a, which);
+				}
+				return character_detail_panel(a, b, c);
+			}
+		}
+		if (b == 0 && rect_scan(1, (uint8 *)&inv_left) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			if (inv_count > 0) {
+				inv_page -= 5;
+				if (inv_page < 0)
+					inv_page = (int16)(((inv_count - 1) / 5) * 5);
+			}
+			goto redraw;
+		}
+		if (b == 0 && rect_scan(1, (uint8 *)&inv_right) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			if (inv_count > 0) {
+				inv_page += 5;
+				if (inv_page >= inv_count)
+					inv_page = 0;
+			}
+			goto redraw;
+		}
+		if (b == 0) {
+			sel = rect_scan(5, (uint8 *)inv_slot);
+			if (sel >= 0 && (inv_page + sel) < inv_count) {
+				int16 act;
+				struct actor_rec *win;
+
+				inv_rec = &g_site_table[(int16)(int8)
+				          g_matching_site_list[inv_page + sel]];
+				while (mouse_button_read() != 0)
+					;
+				act = show_item_description(inv_rec->id,
+				    (int16)inv_rec->weight, 1, 1);
+				if (act == 1) {
+					apply_character_action((int16)(uint8)kind,
+					    (int16 *)inv_rec);
+				} else if (act == 2) {
+					win = &g_actor_table[a];
+					record_set_mode(inv_rec,
+					    (int16)win->x, (int16)win->y,
+					    (int16)win->mode_value);
+				}
+				goto redraw;
+			}
+		}
+		if (b == 0 && rect_scan(1, (uint8 *)&ai_btn) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			character_ai_panel(a);
+			goto redraw;
+		}
+		if (b == 0 && rect_scan(1, (uint8 *)&close_btn) >= 0) {
+			while (mouse_button_read() != 0)
+				;
+			goto finish;
+		}
+		if (labels != 0 &&
+		    rect_scan(1, (uint8 *)RECT(g_btn_table + 4 * RECT_STRIDE)) >= 0)
+			sel = 4;
+		else
+			sel = -1;
+		if (b == 0 && sel < 0) {
+			while (mouse_button_read() != 0)
+				;
+			goto more;
+		}
 	}
 	flag = 1;
 	if (b != 0 && labels == 0)
 		sel = -1;
 	if (sel >= 0) {
-		changed = 0;
-		if (b == 0)
-			draw_glyph_wait(RECT(g_btn_table + (uint16)(sel * RECT_STRIDE)), 1);
 		RECT_STATE_HI(&g_hero_slot_boxes[a]) &= 0x7f;
 		while (mouse_button_read() != 0)
 			;
-		if (sel <= 3) {
-			v = (int16)(int8)g_order_masks[sel];
-			rec->orders = (uint8)
-			    word_xor((int16)(int8)rec->orders, v);	/* 1920-1929 */
-			flag = 0;
-			goto again;
-		}
 		if (sel == 4) {
 			if (g_overworld_hold != 0) {
 				(void)message_box(MSG_BOX_NOTICE, MSG_NO_MEMORIZE);
@@ -2222,28 +3700,9 @@ more:
 					g_game_state.spell_pick_pool -= 1;
 				}
 			}
-			for (;;) {
-				res = box_menu(labels, p8, (int16)*pw, changed);
-				changed = 1;
-				if (res == -1)
-					break;
-				for (i = 0; i != 7; i++)
-					scr[i] = 0;
-				for (i = 10; i >= 0; i--) {
-					k = (int16)(int8)plbl[i];
-					scr[k] = (uint8)(scr[k] + p8[i]);
-				}
-				for (i = 0; i != 7; i++) {
-
-					k = ((i == 6 ? 0 : p2[i]) != scr[i]) ? 1 : 0;
-					scr[i] = (uint8)k;
-				}
-				if (scr[(int16)(int8)plbl[res]] != 0) {
-					p8[res]++;
-					*pw += (uint16)
-					    ((int16)(int8)plbl[res] * 15);
-				}
-			}
+			spell_book_panel(labels, p8, plbl, p2, pw, kind);
+			if (b == 0)
+				goto redraw;
 		}
 	}
 drain:
@@ -2269,12 +3728,136 @@ const uint16 g_kind_ceiling[23] = {
 	35, 35, 35, 35, 35, 35, 35,
 };
 
+/* Pick up the first ground item shown beside this hero's portrait. */
+/* First ground item within reach of this hero's portrait, or -1. */
+static int16 ground_item_slot(int16 slot)
+{
+	struct actor_rec *a = &g_actor_table[slot];
+	int16 kind = (int16)(uint8)g_hero_slots[slot].state;
+	int16 i;
+
+	if (kind > HERO_SLOT_STATE_LIMIT || a->state == 0)
+		return -1;
+
+	for (i = 0; i != SITE_COUNT; i++) {
+		struct site_rec *s = &g_site_table[i];
+		int16 k = (int16)SITE_KIND(s);
+		int16 dx, dy;
+
+		if (s->id == 0)
+			continue;
+		if (k == 0 || k >= SITE_KIND_LIMIT || k == SITE_KIND_TRIGGER)
+			continue;
+		if ((SITE_FLAG_LO(s) & 1) == 0)
+			continue;
+		if ((int16)SITE_MAP_BYTE(s) != (int16)(int8)g_map_mode_char)
+			continue;
+		dx = (int16)s->x - (int16)a->x;
+		dy = (int16)s->y - (int16)a->y;
+		if (dx < 0) dx = -dx;
+		if (dy < 0) dy = -dy;
+		if (dx > 0x20 || dy > 0x20)
+			continue;
+		return i;
+	}
+	return -1;
+}
+
+int16 pick_up_ground_item(int16 slot)
+{
+	struct site_rec *item;
+	int16 kind = (int16)(uint8)g_hero_slots[slot].state;
+	int16 site = ground_item_slot(slot);
+	int16 count;
+
+	if (site < 0)
+		return 0;
+	item = &g_site_table[site];
+
+	/* Containers (flag 0x40) are opened, not carried: the shipped Pick
+	   command lists them and record_flag_rebuild() reveals the contents.
+	   Treat the corner shortcut the same way instead of putting the chest
+	   itself into the hero's backpack. */
+	if ((SITE_FLAG_LO(item) & 0x40) != 0) {
+		g_search_center_x = (int16)g_actor_table[slot].x;
+		g_search_center_y = (int16)g_actor_table[slot].y;
+		player_pick_nearby(slot);
+#ifdef SS_SDL
+		(void)ss_sfx_play(SS_SFX_MENU);
+#endif
+		return 1;
+	}
+
+	g_search_weight = 0;
+	count = 0;
+	collect_matching_sites(&count, kind, 2, 0, 0);
+	g_search_weight += item->weight;
+	if ((int16)g_kind_ceiling[kind] < (int16)g_search_weight) {
+		(void)message_box(MSG_BOX_NOTICE, MSG_NO_CARRY);
+		return 0;
+	}
+
+	item->map = (uint16)kind;
+	SITE_FLAG_LO(item) &= 0xf8;
+	SITE_FLAG_LO(item) |= 2;
+	(void)award_claim(7, WEAPON_RECORD_THROWING_AXE);
+	(void)award_claim(1, WEAPON_RECORD_SPEAR);
+	draw_hero_gauges();
+#ifdef SS_SDL
+	(void)ss_sfx_play(SS_SFX_MENU);
+#endif
+	return 1;
+}
+
+/* Right-click on the corner indicator: describe the item lying there. */
+int16 show_ground_item_description(int16 slot)
+{
+	int16 site = ground_item_slot(slot);
+
+	if (site < 0)
+		return 0;
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+	(void)show_item_description(g_site_table[site].id,
+	                            (int16)g_site_table[site].weight, 0, 1);
+	(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+	return 1;
+}
+
+/* The P shortcut / group-move command: send all four heroes to the cursor. */
+void group_move_order(void)
+{
+	int16 i;
+
+	for (i = 0; i != 4; i++) {
+		RECT_STATE_HI(&g_hero_slot_boxes[i]) &= 0x7f;
+		g_actor_table[i].motion_state = ACTOR_MOTION_GOTO;
+		g_actor_table[i].pixel_x =
+		    (uint16)(((int16)g_cursor_tile_x << 4) + 8);
+		g_actor_table[i].pixel_y =
+		    (uint16)(((int16)g_cursor_tile_y << 4) + 8);
+	}
+}
+
 extern int16 rect_scan(int16 count, uint8 *table);	/* 0x0CDC */
 
 void redraw_rect_slot(void)
 {
 	(void)sprite_draw_current(SPRITE_PANEL_BACKGROUND, SPRITE_DRAW_SOLID, ((int16)g_panel_left >> 3) - 1, (int16)g_panel_top - 8);
 }
+
+#ifdef SS_SDL
+/* The transfer panel is drawn straight over the scene; restoring the saved
+   static rectangle removes it (and any previous panel) when it closes. */
+static void panel_erase(void)
+{
+	int16 x = (int16)(((int16)g_panel_left >> 3) - 1) << 3;
+	int16 y = (int16)((int16)g_panel_top - 8);
+
+	ss_restore_static_rect(x, y, 0x60, 0x40);
+}
+#endif
 
 /* 0x4A4B */
 
@@ -2298,6 +3881,7 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 	}
 	q_kind = (int16)(int16)g_hero_slots[slot].state;	/* 4A7E-4A8F */
 
+	count = 0;
 	if (mode == 0) {
 		if ((q_kind & RECT_STATE_GONE) != 0 || q_kind == HERO_SLOT_NONE) {	/* 4A98-4AA2 */
 			(void)event_raise(EVENT_HERO_SLOT_EMPTY);
@@ -2310,7 +3894,10 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 	}
 
 	if (count == 0) {
-		(void)message_box(MSG_BOX_NOTICE, MSG_NO_ITEMS);
+		if (mode == 0)
+			(void)message_box(MSG_BOX_NOTICE, MSG_NO_ITEMS);
+		else
+			(void)message_box_text("There are no items on the ground");
 		if (mode == 0)
 			(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
 		return 0;
@@ -2335,6 +3922,16 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 				(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
 				return 0;
 			}
+		}
+
+		/* Right-click on the displayed item: show its description. */
+		if ((mouse_button_read() & 2) != 0 &&
+		    rect_scan(3, (uint8 *)g_panel_boxes) == 0) {
+			while (mouse_button_read() != 0)
+				(void)mouse_poll_moved(1);
+			show_item_description(rec->id, (int16)rec->weight, 0, 1);
+			panel_layout(&ox, &oy, slot, count, flag);
+			continue;
 		}
 
 		code = rect_scan(3, (uint8 *)g_panel_boxes);	/* 4BC0-4BCB */
@@ -2382,7 +3979,7 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 					redraw_rect_slot();
 					continue;
 				}
-				apply_rect_action(idx, (int16 *)rec);	/* 4D32-4D38 */
+				apply_character_action(idx, (int16 *)rec);	/* 4D32-4D38 */
 				screen_refresh();
 				redraw_rect_slot();
 				(void)shadow_video_flags(SHADOW_BLIT_RESET);
@@ -2428,7 +4025,7 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 					collect_matching_sites(&count,
 					    (int16)(int8)g_map_mode_char, 1, 0, 0);
 				g_search_weight += rec->weight;
-				if ((int16)g_kind_ceiling[idx] >= (int16)g_search_weight) {
+				if ((int16)g_kind_ceiling[idx] < (int16)g_search_weight) {
 					(void)message_box(MSG_BOX_NOTICE, MSG_NO_CARRY);
 					screen_refresh();
 					redraw_rect_slot();
@@ -2443,21 +4040,13 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 				rec->map = (uint16)idx;
 				SITE_FLAG_LO(rec) &= 0xf8;
 				SITE_FLAG_LO(rec) |= 2;
-				(void)award_claim(7, WEAPON_RECORD_17);
-				(void)award_claim(1, WEAPON_RECORD_9);
-				count = 0;
-				if (mode == 0)
-					collect_matching_sites(&count, q_kind, 2, 0, 0);
-				else
-					collect_matching_sites(&count,
-					    (int16)(int8)g_map_mode_char, 1, 0, 0);
-				if (count == 0) {
-					(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
-					return 0;
-				}
-				if (cursor != 0)
-					--cursor;
-				continue;
+				(void)award_claim(7, WEAPON_RECORD_THROWING_AXE);
+				(void)award_claim(1, WEAPON_RECORD_SPEAR);
+#ifdef SS_SDL
+				panel_erase();
+#endif
+				(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+				return 0;
 			}
 
 			code = rect_scan(4, (uint8 *)g_panel_boxes);
@@ -2466,18 +4055,11 @@ int16 character_command_panel(int16 slot, int16 mode, int16 flag)
 				record_set_mode(SITE(rec), (int16)win->x,
 				        (int16)win->y,
 				        (int16)win->mode_value);	/* 5001-500D */
-				count = 0;
-				if (mode == 0)
-					collect_matching_sites(&count, q_kind, 2, 0, 0);
-				else
-					collect_matching_sites(&count,
-					    (int16)(int8)g_map_mode_char, 1, 0, 0);
-				if (count == 0) {
-					(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
-					return 0;
-				}
-				if (cursor != 0)
-					--cursor;
+#ifdef SS_SDL
+				panel_erase();
+#endif
+				(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+				return 0;
 			}
 			continue;
 
@@ -2534,6 +4116,7 @@ extern int16 mouse_poll_moved(int16);
 extern int16 mouse_button_read(void);
 extern int16 shadow_key_read(void);
 extern int16 shadow_video_page(int16);
+extern int16 shadow_screen_restore(uint16);
 extern int16 rect_scan(int16 count, uint8 *table);	/* 0x0CDC */
 extern uint16 g_hold_length, g_overworld_hold, g_screen_hold;
 extern uint16 g_selected_hero_slot, g_golmoon_menu_choice, g_elistan_menu_choice, g_raistlin_menu_choice, g_cursor_mode;
@@ -2562,12 +4145,16 @@ void tactical_command_panel(int16 slot, int16 command)
 	int16 picked;
 	int16 taken;
 	int16 w;
+	int16 btn;
+	int16 close_btn;
 
 	labels = 0;
 	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
 	(void)shadow_video_page(SHADOW_PAGE_DEFAULT);
 	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
 
+panel_redraw:
+	(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
 	w = (int16)g_selected_hero_slot;
 	(void)sprite_draw_current((int16)(uint8)g_hero_slots[w].state, SPRITE_DRAW_MASKED,
 	               (int16)(int16)g_hero_slots[w].x >> 3,
@@ -2615,7 +4202,7 @@ void tactical_command_panel(int16 slot, int16 command)
 		if (sel != 0)
 			sprite_blit_offset(x + 0xe, y + 0xe, sel);
 		sel = (int16)rec->ranged_weapon.icon;
-		if (sel == 6)
+		if (sel == RANGED_WEAPON_HOOPAK)
 			++sel;
 		if (sel != 0)
 			sprite_blit_offset(x + 0x20, y + 0xe, sel);
@@ -2629,8 +4216,26 @@ void tactical_command_panel(int16 slot, int16 command)
 		while (mouse_button_read() != 0) { }
 		while (mouse_button_read() == 0)
 			(void)mouse_poll_moved(1);
+		btn = mouse_button_read();
 		while (mouse_button_read() != 0) { }
 		(void)shadow_video_flags(SHADOW_BLIT_FLUSH);
+		if ((btn & 2) != 0) {
+			sel = rect_scan(9, (uint8 *)g_hot_spots);
+			close_btn = 0;
+			if (sel >= 0)
+				(void)message_box_text_ex(command_action_text(sel), &close_btn);
+			if ((close_btn & 2) != 0) {
+				/* A right click only dismisses the help text;
+				   keep the command panel open. */
+				(void)shadow_screen_restore(7);
+				goto panel_redraw;
+			}
+			g_cursor_mode = CURSOR_MODE_DEFAULT;
+			(void)mouse_poll_moved(0);
+			(void)shadow_video_page(SHADOW_PAGE_PREVIOUS);
+			draw_hero_gauges();
+			return;
+		}
 		sel = rect_scan(9, (uint8 *)g_hot_spots);
 	} else {
 		sel = QPANEL_ACTION(command);
@@ -2652,6 +4257,9 @@ void tactical_command_panel(int16 slot, int16 command)
 			break;
 		g_cursor_mode = CURSOR_MODE_TARGET;
 		wait_key_drain();
+#ifdef SS_SDL
+		(void)port_aim_clicked_monster();
+#endif
 		(void)hero_window_point_draw(slot, picked);
 		win->health = (uint8)((int16)g_hold_length * 3);
 		while (mouse_button_read() != 0) { }
@@ -2677,8 +4285,47 @@ void tactical_command_panel(int16 slot, int16 command)
 			picked = (int16)g_elistan_menu_choice;
 			taken = 1;
 		}
-		if (!taken)
-			picked = box_menu(labels, codes, BOX_MENU_NO_DRAW, 0);
+		if (!taken) {
+			uint16 menu_labels[12];
+			uint8 menu_counts[12];
+			uint8 menu_index[12];
+			int16 menu_n = 0;
+			int16 menu_max = (kind == CHAR_RAISTLIN
+			                  || kind == CHAR_GILTHANAS) ? 8 : 11;
+			int16 mi;
+
+			/* Offer only the spells that are memorized and still have a
+			   charge left. */
+			for (mi = 0; mi < menu_max; mi++) {
+				if (labels[mi] == 0
+				    || class_name_text(labels[mi])[0] == 0)
+					break;
+				if (codes[mi] == 0)
+					continue;
+				menu_labels[menu_n] = labels[mi];
+				menu_counts[menu_n] = codes[mi];
+				menu_index[menu_n] = (uint8)mi;
+				menu_n++;
+			}
+			/* box_menu() finds the row count by walking to an empty
+			   label; the caster's list ends with one at labels[mi]. */
+			menu_labels[menu_n] = labels[mi];
+			if (menu_n == 0) {
+				(void)message_box_text("No spells are memorized.");
+				break;
+			}
+			g_menu_caster_kind = kind;
+			g_menu_spell_count = menu_n;
+			g_menu_spell_map = menu_index;
+			g_menu_strip_level = 1;
+			picked = box_menu(menu_labels, menu_counts,
+			                  BOX_MENU_NO_DRAW, 0);
+			g_menu_spell_map = 0;
+			g_menu_spell_count = 0;
+			g_menu_strip_level = 0;
+			if (picked >= 0 && picked < menu_n)
+				picked = (int16)menu_index[picked];
+		}
 		if (picked == -1)
 			break;
 		win->health = (uint8)((int16)g_hold_length * 3);
@@ -2707,6 +4354,9 @@ void tactical_command_panel(int16 slot, int16 command)
 			break;
 		g_cursor_mode = CURSOR_MODE_TARGET;
 		wait_key_drain();
+#ifdef SS_SDL
+		(void)port_aim_clicked_monster();
+#endif
 		(void)hero_window_point_draw(slot, picked);
 		while (mouse_button_read() != 0) { }
 		break;
@@ -2777,14 +4427,7 @@ void tactical_command_panel(int16 slot, int16 command)
 		screen_refresh();
 		g_cursor_mode = CURSOR_MODE_MOVE;
 		wait_key_drain();
-		for (sel = 0; sel != 4; ++sel) {
-			RECT_STATE_HI(&g_hero_slot_boxes[sel]) &= 0x7f;
-			g_actor_table[sel].motion_state = ACTOR_MOTION_GOTO;
-			g_actor_table[sel].pixel_x =
-			    (uint16)(((int16)g_cursor_tile_x << 4) + 8);
-			g_actor_table[sel].pixel_y =
-			    (uint16)(((int16)g_cursor_tile_y << 4) + 8);
-		}
+		group_move_order();
 		break;
 
 	case QPANEL_CONTROL:
@@ -2892,9 +4535,9 @@ int16 monster_experience_list(void)
 		y = 0x30;
 		for (i = 0; i < 10; i += 2) {
 			(void)shadow_text_draw(TEXT_COLOUR_HIGHLIGHT, 6, y,
-			                       class_name_text(g_name_offset[95 + i + scroll]));
+			                       monster_display_name(5 + i + scroll));
 			(void)shadow_text_draw(TEXT_COLOUR_HIGHLIGHT, 0x15, y,
-			                       class_name_text(g_name_offset[96 + i + scroll]));
+			                       monster_display_name(6 + i + scroll));
 			y += 8;
 		}
 

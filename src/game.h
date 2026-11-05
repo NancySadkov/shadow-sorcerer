@@ -6,6 +6,7 @@
 
 #include "names.h"
 #include "ids.h"
+#include "structs.h"
 #include <stdio.h>
 
 #ifndef GAME_H
@@ -86,6 +87,7 @@ extern uint16 g_move_speed_shift;
 extern uint16 g_map_N_event_done;
 extern uint8 g_map_mode_char;
 extern uint16 g_clock_hour;
+extern uint16 g_day_counter;
 extern uint16 g_hour_ticks;
 extern uint16 g_elapsed_accum;
 extern uint16 g_elapsed_step;
@@ -108,6 +110,9 @@ extern uint16 g_sound_request;
 extern uint16 g_game_end_flag;
 extern uint8 g_node_selector;
 extern uint16 g_pending_actor_event;
+#ifdef SS_SDL
+extern uint16 g_site_exit_pending;
+#endif
 extern uint8 g_panel_kind_hi;
 extern uint8 g_panel_kind_lo;
 extern uint16 g_sticky_click_flag;
@@ -161,7 +166,15 @@ extern struct map_record g_map_records[MAP_RECORD_COUNT];
 extern uint16 g_text_index[250];
 extern uint8 g_map_cell_kind;
 extern uint8 g_cell_grid[TERRAIN_CELLS];
+struct credits_text {
+	char block_a[228];	/* 0x8D77-0x8E5B */
+	char block_b[228];	/* 0x8E5B-0x8F3F */
+	char block_c[228];	/* 0x8F3F-0x9023 */
+	char block_d[39];	/* 0x9023-0x904A */
+};
+
 extern struct credits_text credits_08d77;	/* 0x8D77 */
+void credits_save(void);
 extern const uint8 g_dir_code[16];
 extern const uint16 g_name_offsets[24];
 extern const uint16 g_move_delta[9];
@@ -176,8 +189,13 @@ extern volatile uint16 g_disp_control;  /* 0xCE6E */
 extern volatile uint16 g_disp_flag;  /* 0xCE7C */
 extern volatile uint16 g_disp_index;  /* 0xCE80 */
 extern volatile uint16 g_disp_last;  /* 0xCE7E */
+#ifdef SS_SDL
+extern volatile const uint8 *g_disp_ptr;  /* 0xCE78 */
+extern volatile const uint8 *g_disp_ptr2;  /* 0xCE7A */
+#else
 extern volatile uint16 g_disp_ptr;  /* 0xCE78 */
 extern volatile uint16 g_disp_ptr2;  /* 0xCE7A */
+#endif
 extern volatile uint16 g_disp_state;  /* 0xCE76 */
 extern uint16 g_drv_handle;
 extern struct party_rec g_party_table[];
@@ -188,8 +206,6 @@ extern uint8 g_creature_grid[TERRAIN_CELLS];
 extern uint16 g_hot_spots[45];
 extern int16 g_hw_config;
 extern const uint16 g_kind_ceiling[23];
-extern uint8 g_kind_gate[5];
-extern uint16 g_kind_segment[5];
 extern char * g_label_buttons[10];
 extern char g_line_buffer[50];
 extern uint16 g_monster_bank_segments[];  /* 0xA28C */
@@ -318,7 +334,7 @@ void draw_hero_gauges(void);
 void panel_layout(int16 *px, int16 *py, int16 flags, int16 mode, int16 cursor);
 void hero_slot_click_arm(void);
 void hero_slot_select(int16 idx);
-void apply_rect_action(int16 kind, int16 *act);
+void apply_character_action(int16 kind, int16 *act);
 void spend_character_work(int16 delta, int16 mode);
 void hero_slot_select_spread(int16 idx);
 void clock_hold_span(void);
@@ -346,6 +362,13 @@ void record_stray_check(struct actor_rec *rec);
 int16 record_direction(struct actor_rec *rec);
 int16 choose_target(struct actor_rec *rec, int16 tag, int16 start, int16 end);
 void actor_take_action(int16 idx, struct actor_rec *rec);
+int16 actor_is_neutral(struct actor_rec *a);
+int16 actor_is_invisible(struct actor_rec *a);
+void actor_provoke(int16 idx);
+void actor_clear_provoke(int16 idx);
+void show_actor_description(int16 idx);
+void describe_world_hex(int16 col, int16 row, int16 travel);
+void describe_time(void);
 void record_tick_state(struct actor_rec *rec);
 int16 actor_sweep(void);
 int16 joystick_calibrate(void);
@@ -386,6 +409,11 @@ extern int16 party_update_all(int16 advance, int16 draw);
 extern void party_spawn(int16 slot, int16 parts, int16 flags);
 void creature_behavior_round(void);
 void sound_request_max(int16 v);
+void sound_request_or_sample(int16 v);
+void sound_request_or_sample_id(int16 v, int sample);
+void sound_request_or_effect(int16 kind, int16 v);
+void sound_request_damage(void);
+void sound_request_spellcast(void);
 int16 roll_dice_amount(int16 i);
 void party_upkeep_charge(void);
 int16 wait_button_click(struct rect_rec *rec, int16 n);
@@ -398,6 +426,14 @@ int16 announce_vote(int16 opt, int16 ent);
 int16 companion_react_tile(int16 ent, int16 ask, int16 kind);
 void world_map_click_view(void);
 void world_map_click(void);
+#ifdef SS_SDL
+int16 port_walk_step(int16 dir);
+int16 port_site_step(int16 dir);
+int16 port_pick_actor(int16 mx, int16 my);
+int16 port_pick_monster(int16 mx, int16 my);
+int16 port_aim_clicked_monster(void);
+extern int16 g_aim_actor;
+#endif
 int16 find_party_player_tile(int16 idx);
 void spawn_monsters(int16 which);
 void mark_map_unseen(void);
@@ -405,7 +441,13 @@ void free_list_reset(void);
 uint8 *free_list_alloc(void);
 uint8 *free_list_find_prev(int16 key, int16 flag);
 void free_list_insert_child(uint8 *q, uint8 *start);
-int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16 x, int16 data, int16 y);
+#ifdef SS_SDL
+int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, uintptr_t data, int16 x, int16 y);
+#define FREE_DATA(p)	((uintptr_t)(p))
+#else
+int16 free_list_insert(int16 mode, int16 key_lo, int16 key_hi, int16 type, int16 data, int16 x, int16 y);
+#define FREE_DATA(p)	((int16)(p))
+#endif
 int16 draw_terrain_sprites(void);
 int16 free_list_clear_nodes(void);
 int16 draw_free_node(struct node_rec *node);
@@ -421,13 +463,28 @@ extern int16 save_pack(char *pattern);
 int16 load_panel_template(char *name);
 extern int16 save_restore(char *pattern);
 extern int16 sprite_draw_current(int16 sprite, int16 mode, int16 column, int16 row);
+#ifdef SS_SDL
+extern int16 sprite_draw_block(int16, int16, int16, int16, const uint8 *);
+#else
 extern int16 sprite_draw_block(int16, int16, int16, int16, uint16);
+#endif
 extern int16 shadow_video_flags(int16 flags);
 int16 sprite_draw_far(int16 id, int16 x, int16 y);
 void sprite_draw_state_frame(uint16 seg);
+#ifdef SS_SDL
+void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y,
+                      const uint8 *src);
+#else
 void sprite_blit_pair(int16 pair, int16 kind, int16 x, int16 y, int16 data_off);
+#endif
 void sprite_blit_center(int16 x, int16 y, int16 id);
 void sprite_blit_offset(int16 x, int16 y, int16 id);
+#ifdef SS_SDL
+void sprite_actor_rect(int16 hero_slot, int16 gx, int16 gy,
+                       int16 *left, int16 *top, int16 *right, int16 *bottom);
+void sprite_monster_rect(int16 kind, int16 gx, int16 gy,
+                         int16 *left, int16 *top, int16 *right, int16 *bottom);
+#endif
 void sprite_draw_dispatch(int16 x, int16 y, int16 id);
 void sprite_draw_forced(int16 x, int16 y, int16 id);
 void sprite_draw_field(int16 x, int16 y, struct sprite_node_rec *rec, int16 sel);
@@ -481,7 +538,11 @@ extern int16 shadow_key_read(void);
 int16 shadow_asset_load(char *name, uint16 paragraph);
 extern int16 shadow_video_page(int16 page);
 void word_mul(uint16 *acc, uint16 yl, uint16 yh);
+#ifdef SS_SDL
+int16 table_longest_string(void *items, int16 image_addrs);
+#else
 int16 table_longest_string(uint16 *items, int16 image_addrs);
+#endif
 void long_mul(uint16 xl, uint16 xh, uint16 yl, uint16 yh, uint16 *plo, uint16 *phi);
 void mem_copy_bytes(uint8 *dst, const uint8 *src, int16 n);
 void format_uint(uint16 v, char *p);
@@ -498,14 +559,24 @@ extern void pit_stop(void);
 struct character_rec *character_at(uint16 addr);
 int16 rect_scan(int16 count, uint8 *t);
 void redraw_rect_slot(void);
+#ifdef SS_SDL
+void sprite_expand_group4(int16 kind, int16 x, int16 y, const uint8 *src);
+void sprite_expand_group2(int16 kind, int16 x, int16 y, const uint8 *src);
+void remap_group(int16 kind, const uint8 *src, int16 grp);
+#else
 void sprite_expand_group4(int16 kind, int16 x, int16 y, int16 data_off);
 void sprite_expand_group2(int16 kind, int16 x, int16 y, int16 data_off);
 void remap_group(int16 kind, int16 data_off, int16 grp);
+#endif
 extern int16 rnd(int16 n);
 extern int16 shadow_getkey_noecho(void);
 extern int16 shadow_poll(void);
 extern int16 shadow_save(void);
+#ifdef SS_SDL
+void shadow_sprite(int16 sel, int16 kind, int16 x, int16 y, const uint8 *src);
+#else
 void shadow_sprite(int16 sel, int16 kind, int16 x, int16 y, int16 data_off, uint16 seg);
+#endif
 extern int16 shadow_video_copy(uint16 lines);
 extern int16 shadow_page_flip(void);
 extern int16 shadow_rect_fill(uint16 a, uint16 b, uint16 c, uint16 d);
@@ -514,7 +585,7 @@ void shadow_mouse_read(void);
 extern void shadow_mouse_draw(uint16, uint16);
 extern int16 shadow_screen_restore(uint16 v);
 extern int16 shadow_region_clear(int16 and_mask, int16 column, int16 row, int16 width_bytes, int16 height_rows);
-extern volatile void (*g_disp_handler)(void);  /* 0xCE82 */
+extern void (*volatile g_disp_handler)(void);  /* 0xCE82 */
 uint8 *walk_table(int16 off);
 
 #endif
